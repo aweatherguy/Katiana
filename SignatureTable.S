@@ -71,7 +71,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .extern SerialString
 BootloaderAPI_Signatures:
 
+#if defined( CUSTOM_USB_SERIAL )
 	.word SerialString  ; 
+#else
+	.word 0x0000
+#endif
 	.word 0x0000	    ; unused
 	.word 0xDF00	    ; Signature for the CDC class bootloader
 	.word 0xDCFB	    ; Signature for a LUFA class bootloader

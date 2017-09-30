@@ -308,7 +308,7 @@ uint16_t CALLBACK_USB_GetDescriptor(const uint16_t	wValue,
                                     SramSerial[0] = sizeof(SramSerial);     // set length field -- size of entire struct including length byte
                                     SramSerial[1] = DTYPE_String;           // set data type field -- type is string.
 
-				    uint8_t *src = SerialString;
+				    uint8_t *src = (uint8_t *)SerialString;
                                     //
                                     // in this loop, k is incremented by two -- once in the for statement and once in the call to pgm_read_byte()
                                     //

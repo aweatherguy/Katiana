@@ -71,6 +71,10 @@ BOOT_API_LD_FLAGS    += $(call BOOT_SECTION_LD_FLAG, .apitable_signatures,  Boot
 # Default target
 all:
 
+all:	CheckUsbSerial
+
+clean:	RemoveUsbSerialCheck
+
 # Include LUFA-specific DMBS extension modules
 DMBS_LUFA_PATH ?= $(LUFA_PATH)/Build/LUFA
 include $(DMBS_LUFA_PATH)/lufa-sources.mk
@@ -86,3 +90,19 @@ include $(DMBS_PATH)/gcc.mk
 include $(DMBS_PATH)/hid.mk
 include $(DMBS_PATH)/avrdude.mk
 include $(DMBS_PATH)/atprogram.mk
+
+CheckUsbSerial: ValidateUsbHdwrSerial.c
+	@echo 
+	@echo --------- Validating USB Serial Number -----------
+	@echo 
+	@echo Tests are defined in ValidateUsbHdwrSerial.c...
+	@echo
+	cc ValidateUsbHdwrSerial.c -o TmpExec.exe
+	./TmpExec.exe
+	@rm -f TmpExec.exe
+	@echo
+	@echo ---------- USB Serial Number is Valid ------------
+	@echo
+
+RemoveUsbSerialCheck:
+	rm -f TmpExec.exe
