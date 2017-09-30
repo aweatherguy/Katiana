@@ -1,0 +1,748 @@
+/** \file
+
+This file contains special DoxyGen information for the generation of the main page and other special
+documentation pages. It is not a project source file.
+/
+
+/** 
+
+\mainpage Katiana Bootloader for Arduino
+
+<br />\section Sec_Description Project Description
+
+This bootloader enumerates on USB as a CDC Class device (virtual serial port).
+It implements a subset of the AVR109 protocol, allowing applications such as avrdude
+to program flash and EEPROM on the MCU. 
+It also provides startup logic for running Arduino sketches.
+
+Out of the box this bootloader builds for the ATmega32U4 with a 4KB bootloader section size
+If you wish to alter this size and/or change the AVR model, you will need to
+edit the MCU, FLASH_SIZE_KB and BOOT_SECTION_SIZE_KB values in the accompanying makefile.
+It should be compatible with ATmega MCUs with flash sizes up to 128kB, but has not been tested
+with other than the ATmega32U4.
+
+When the bootloader is running, the boards RX and TX LEDs will flash in accordance with data being
+received from and set to the CDC interface. Optionally, the "L" LED can also be configured to flash
+a fixed number of times at bootloader startup.
+
+\subsection SSec_Bennies Benefits
+
+The Katiana bootloader offers some benefits compared to previous USB-based designs:
+
+<ul>
+<li>Sketches can determine the cause of an MCU reset. 
+</li>
+
+<li>Custom USB serial numbers may be assigned to each physical board on which the bootloader
+  is installed. 
+</li>
+
+<li>Communications between bootloader and sketch can no longer be accidentally 
+  interfered with by the sketch.
+
+<li>Arduino IDE uploads can now program both flash and EEPROM.
+</li>
+
+<li>Address validation protects against accidental or malicious uploads which 
+  would corrupt the bootloader.
+</li>
+</ul>
+
+\section Sec_Compat Compatibility
+
+This bootloader is specifically intended for the ATmega32U4 MCU as used on Arduino boards such as
+the Leonardo and LilyPad USB. It implements Arduino-specific behaviors and 
+supports uploads by the Arduino IDE.
+
+\subsection SSec_Info USB Support
+
+<table>
+ <tr>
+  <td><b>USB Mode:</b></td>
+  <td>Device</td>
+ </tr>
+ <tr>
+  <td><b>USB Class:</b></td>
+  <td>Communications Device Class (CDC)</td>
+ </tr>
+ <tr>
+  <td><b>USB Subclass:</b></td>
+  <td>Abstract Control Model (ACM)</td>
+ </tr>
+ <tr>
+  <td><b>Relevant Standards:</b></td>
+  <td>USBIF CDC Class Standard</td>
+ </tr>
+ <tr>
+  <td><b>Supported USB Speeds:</b></td>
+  <td>Full Speed Mode</td>
+ </tr>
+</table>
+
+<br />\section Sec_Running Bootloader Logic
+
+At startup, the bootloader executes a sequence of logical tests and delays as depicted in the
+figure below.
+These provide multiple paths by which to enter the bootloader while at the same time providing
+the fastest possible sketch startup time when the bootloader is not required.
+
+From the point of view of a sketch, the bootloader <em>interferes</em> with
+reset events. In some cases, the interference is minimal and the sketch is started with 
+no delay or a small delay. 
+
+In other cases, the bootloader intercepts the reset event and provides the capability to upload a new sketch.
+When AVR910 commands are being accepted, there is a timeout period.
+If eight seconds elapses with no valid AVR910 commands being received, the sketch will be
+started (if there is one). If there's no sketch, there is no timeout period.
+
+\subsection SSec_PON Power-on and Brown-out Resets
+
+As long as there's a sketch loaded, the bootloader immediately starts it for these reset events.
+If there's no sketch, the bootloader begins accepting AVR910 commands until a sketch has been loaded.
+Note that earlier bootloader versions treated brown-out resets differently 
+(see the section below on Other Reset Events).
+
+\subsection SSec_WDT WDT Resets
+
+This is the mechanism through which the Arduino IDE uploads new sketches. 
+Arduino core libraries (linked into every sketch) purposely generate
+a WDT reset to get into the bootloader when the IDE requests an upload.
+In essence, this takes over control of WDT reset events and would make it more difficult for
+sketches to make use of WDT resets for their own purposes. 
+The bootloader's startup sequence is designed to make the Arduino core's take-over of
+WDT resets transparent to the overlying sketch.
+
+The bootloader works in cooperation with the Arduino core to make WDT reset events caused
+by the sketch behave as expected. By storing a prearranged value at a pre-defined location in SRAM, 
+the Arduino core can signal to the bootloader that a WDT reset was caused by the core.
+In this case, the bootloader can begin accepting AVR910 commands instead of immediately starting
+the sketch.
+The pre-defined location is SRAM is calle the <em>BootKey</em>,
+and when it contain the pre-defined value the BootKey is said to be <em>active</em>.
+
+Beginning with IDE versions 1.6, the BootKey location is <tt>(RAMEND-1)</tt>.
+When a sketch is running this normally contains the return address for the <tt>main()</tt> function.
+Since <tt>main()</tt> never returns this is a safe place to pass a value to the bootloader.
+The bootloader has some code in its <tt>.init0</tt> section to read this value,
+before it is overwritten by the bootloader's own startup code.
+
+\subsection SSec_EXT External Resets
+
+The bootloader will normally start the sketch after a small delay (750ms) when an external reset occurs.
+However, if a second external reset occurs during the delay period the bootloader will
+instead begin accepting AVR910 commands. 
+This is a failsafe mechanism which allows the user to activate the bootloader if a sketch
+has been loaded which breaks the normal CDC serial port provided by the Arduino core.
+
+\subsection SSec_OtherResets Other Reset Events
+
+All reset events not mentioned above cause the bootloader to begin accepting AVR910 commands
+with an 8-second timeout. 
+On most (or all?) MCUs, these are the JTAG and USB reset events.
+
+<img src="../../BootLogic.png" width=481 height=751 style="padding: 16px 16px 16px 16px">
+
+\subsection SSec_IDE_Uploads Arduino IDE Upload Process
+
+Many Arduino boards include a separate hardware component which implements the USB interface.
+On these boards it is possible for the host computer (e.g. Windows or Linux) to force
+a hardware reset on the Atmel MCU -- and this provides an entry into the bootloader 
+to upload a new sketch. This is not the case with boards such as the Leonardo or 
+LilyPad USB -- the USB interface is built into the Atmel MCU here. 
+As a result, there is no way for the host computer to force a hardware reset on the
+Atmel MCU. 
+A different technique must be used to get into the bootloader for sketch uploads.
+
+To understand this process, one should know that the CDC serial port exposed by the 
+bootloader has a differnt USB vendor ID (aka VID) than does the serial port exposed by
+the sketch. For example, when the bootloader is active the board might appear on Windows
+as the serial port <tt>COM7</tt>, but when the sketch is running the board enumerates
+as <tt>COM8</tt>.
+
+To get into the bootloader, the Arduino IDE (running on the host computer)
+opens the CDC serial port at 1200 baud and then immediately closes it.
+With these boards, all sketchs include an Arduino core file (CDC.cpp) which detects the port
+being opened at 1200 baud; when it is closed the core forces a WDT reset. 
+Before doing this however, it activates the BootKey so the booloader knows that an upload is desired.
+
+The IDE then waits for the sketch serial port to disappear, and for the bootloader serial port
+to appear. Once this happens it begins sending AVR910 commands to the bootloader.
+
+<br />\section Sec_UsbSerial Custom USB Serial Numbers
+
+There is an option to have the bootloader enumerate on USB with a custom hardware serial number.
+Without this feature (on the Windows OS at least), every time the bootloader is plugged into a different USB
+port, it will get a different serial port COM number. That's rather annoying.
+That doesn't happen with Arduino boards (such as the Uno) which report serial numbers.
+Having the bootloader report a serial number fixes this -- the same board will always enumerate
+with the same COM port number.
+
+\subsection SSec_ValidSNs Valid USB Serial Numbers
+
+The base USB standard does not specify limitations on the S/N length or what characters
+it may contain. 
+The standard for the USB Mass Storage Class / Bulk-Only Transport (Revision 1.0, Sept 31, 1999)
+is much more restrictive. 
+The recommendations adopted here comply with that standard:
+
+- The serial number must be at least 12 characters long.
+- It must contain only upper case hexadecimal characters (0-9 and A-F).
+- The 80-bit value comprised of VID (16-bits), PID (16-bits), 
+  and last 12 characters of S/N (effectively 48 bits) must be unique.
+  
+This driver enforces the minimum length and character value restrictions.
+Serial numbers longer than 126 characters (508 equivalent bits) are also prohibited.
+
+In some sense then, only the last 12 characters of the S/N are important and
+there's not much point in defining serial numbers longer than this.
+It may serve a purpose from a manufacturer's perspective, but at the USB level, it matters not.
+
+The bootloader stores the serial number both in flash and SRAM as a Unicode string.
+Be aware that long serial numbers will consume a significant amount of both memories,
+two bytes per string character.
+
+\subsection SSec_EnablingUsbSerials Enabling Custom USB S/Ns
+
+The serial number needs to be placed in the file 
+<tt>UsbHdwrSerial.h</tt> prior to building the bootloader. If more than one board is being
+loaded, a different build with different serial number is required for every board.
+The serial number header file should look like this:
+
+\code
+//
+#pragma once
+#define USB_HDWR_SERIAL "12345678901234567890"
+//
+\endcode
+
+The string must be between 12 and 126 characters long and may only contain upper case
+hexadecimal characters (0-9, A-F). See the subsection <em>USB Serial Numbers</em>
+in the <em>API for Sketches</em> section below for more on serial number restrictions.
+
+\subsection SSec_SerialGen Generating Custom Serial Numbers
+
+An example of generating semi-random custom serial numbers is provided by the shell script <tt>NewUsbHdwrSerial.sh</tt>.
+This generates a serial by taking the MD5 hash of current date and time strings, then extracting the 
+first twelve hexadecimal characters. There are of course many other ways to do this.
+
+<br />\section Sec_Building Building Katiana
+
+<ol>
+<li>Obtain a copy of the LUFA source code; version 170418 is known to work; later versions may work as well.</li>
+<li>Create a subdirectory named <tt>Katiana</tt> within the <tt>Projects</tt> directory of the LUFA source.</li>
+<li>Place the files for this bootloader inside the new Katiana subdirectory.</li>
+<li>Edit makefile, specifying correct sizes for flash and boot sector.</li>
+<li>Edit <tt>Config/AppConfig</tt> and select desired options.</li>
+<li>Normally, <tt>Config/LUFAConfig</tt> does not require any changes.</li>
+<li>If desired, the bootloader's USB PID/VID can be changed in <tt>Descriptors.c</tt>. 
+Beware however that changing these typically requires a custom Boards.txt file in the Arduino
+installation -- that is where USB VID/PID for the sketch are specified.</li>
+<li>Run <tt>make</tt>.</li>
+<li>To get HTML in the <tt>Documentation</tt> folder, run <tt>make doxygen</tt>.</li>
+</ol>
+
+AVRDude as used by the Arduino IDE uses only AVR910 block read/write operations for upload, 
+so it is only necessary to enable block support when building Katiana.
+Flash and EEPROM byte support are not required.
+
+<br />\section Sec_BuildSketch Building Arduino Sketches
+
+It may be necessary to add a custom board version which specifies some extra build flags.
+Try building sketches without this at first.
+Sketch uploads should always work the first time after flashing the bootloader and
+they will be uploaded to the bootloader's COM port.
+After the first upload, the sketch will appear on a different port; if uploads to this port
+are failing, then try adding the custom board with build flags as shown below.
+
+\code
+<BoardName>.build.extra_flags={build.usb_flags} -DMAGIC_KEY_POS=(RAMEND-1)
+\endcode
+
+The Arduino core libraries should detect the new bootloader based on its signature
+at (FLASHEND-1) and automatically use the correct location for the boot key.
+If that for some reason doesn't happen, the above build flags should force the issue.
+
+\subsection SSec_BuildUsbSNs Custom USB Serial Numbers
+
+If this option is enabled in the bootloader, new copies of <tt>USBCore.cpp</tt> and
+<tt>USBAPI.h</tt> should be copied into the Arduino cores folder.
+
+<br />\section Sec_Installation Driver Installation
+
+After running this bootloader for the first time on a new computer, you will need to supply the .INF
+file located in this bootloader project's directory as the device's driver when running under Windows.
+This will enable Windows to use its inbuilt CDC drivers, negating the need for custom drivers for the
+device. Other Operating Systems should automatically use their own inbuilt CDC-ACM drivers.
+
+<br />\section Sec_HostApp Host Controller Application
+
+This bootloader is compatible with the open source application AVRDUDE, Atmel's AVRPROG, or other
+applications implementing the AVR109 protocol, which is documented on the Atmel website as an application
+note.
+
+\subsection SSec_AVRDude AVRDUDE (Windows, Mac, Linux)
+
+AVRDude is a free, cross-platform and open source command line programmer for Atmel and third party AVR
+programmers. It is available on the the Windows platform as part of the "WinAVR" package, or on other systems
+either from a build from the official source code, or in many distributions as a precompiled binary package.
+This is what the Arduino IDE uses under the hood to upload sketches.
+
+To load a new Intel HEX file directly with AVRDude, locate the temporary directory where the sketch is
+built. Do not close the IDE after building as it will delete the temporary directory when closed.
+On Windows this directory is typically located here:
+
+\code
+C:\Users\<username>\AppData\Local\Temp\arduino_build_<random number>
+\endcode
+
+For these examples, it is assumed that the command window is in the temporary build directory
+and that the file name of the sketch is <tt>Sketch.ino</tt>
+
+It is necessary to specify "AVR109" as the programmer, with the allocated COM port. 
+On Windows platforms this will be a standard COM port name. For example:
+
+\code
+avrdude -c AVR109 -p atmega32u4 -P COM7 -U flash:w:Sketch.ino.hex
+\endcode
+
+On Linux systems, this will typically be a device file in the <tt>/dev/ttyACMx</tt> directory.
+Like this:
+
+\code
+avrdude -c AVR109 -p atmega32u4 -P /dev/ttyACM7 -U flash:w:Sketch.ino.hex
+\endcode
+
+It also possible to upload both flash and EEPROM in the same operation.
+Arduino IDE builds use a <tt>.eep</tt> suffix for the EEPROM hex files.
+Don't specify the <tt>.eep</tt> file if there's no EEPROM data declared in the sketch;
+that may cause AVRDude to generate an error.
+Here's an example of uploading both flash and EEPROM for a sketch:
+
+\code
+avrdude -c AVR109 -p at90usb1287 -P COM0 -U flash:w:Sketch.ino.hex -U eeprom:w:Sketch.ino.eep
+\endcode
+
+Run AVRDude with no command line options, 
+or refer to the AVRDude project documentation for additional usage instructions.
+
+<br />\section Sec_API API for Sketches
+
+Information about the bootloader is available to sketches and the Arduino core libraries
+at pre-defined locations in flash.
+The arduino core libraries (CDC.cpp) use this to determine the bootloader version.
+Without this, the Arduino core won't know where the BootKey is located.
+
+Here's an example of macros that could be used to access Katiana's API for sketches:
+
+\code
+//
+
+#define KATIANA_TABLE_SIZE       8
+#define KATIANA_TABLE_START      (FLASHEND - KATIANA_TABLE_SIZE + 1)
+
+#define KATIANA_SIGNATURE        (uint16_t *)(KATIANA_TABLE_START + KATIANA_TABLE_SIZE - 2)
+#define KATIANA_SIGNATURE_VALUE  0xDCFB
+
+#define KATIANA_CLASS_SIGNATURE  (uint16_t *)(KATIANA_TABLE_START + KATIANA_TABLE_SIZE - 4)
+#define KATIANA_CDC_SIGNATURE    0xDF00
+
+#define KATIANA_UNUSED_WORD      (uint16_t *)(KATIANA_TABLE_START + KATIANA_TABLE_SIZE - 6)
+
+#define KATIANA_USB_SERIAL       (uint8_t *)(KATIANA_TABLE_START + KATIANA_TABLE_SIZE - 8)
+
+#define BOOTKEY                  (* (uint16_t *)(RAMEND - 1) )
+#define BOOTKEY_BOOT_REQUEST     0x7777
+//
+\endcode
+
+ Obviously, the signature, class signature and unused values are in flash memory and must be accessed using
+ AVR <tt>pgm_read_...()</tt> functions. For example the siganture can be read like this:
+
+ \code
+ uint16_t sig = pgm_read_word( BOOTLOADER_SIGNATURE );
+ \endcode
+
+ \subsection SSec_BootKey BootKey API
+
+ The boot key is in SRAM and accessed like any other global variable. 
+ Normally, accessing BootKey is only something which is done within the Arduino core (i.e. in CDC.cpp).
+ However, if a sketch wishes to force a reset into the bootloader, it can activate the BootKey
+ and then force a WDT reset. For example, 
+ 
+ \code
+ BOOTKEY = BOOTKEY_BOOT_REQUEST;
+ wdt_enable(0);                   // (presumes that WDT interrupts are not enabled)
+ while (1);
+ \endcode
+ 
+\subsection SSec_UsbSerialAPI USB Serial Number
+
+If the option is enabled, <tt>KATIANA_USB_SERIAL</tt> contains the address in bootloader flash
+of the USB serial number ASCII, null-treminated string.
+
+Above, it was pointed out that the Arduino sketch enumerates with a different PID on USB
+than does the bootloader. This makes the sketch appear as a different serial port 
+but the sketch will not report a USB serial number and will still have the annoying property 
+of changing COM port numbers as it is moved between USB ports.
+
+Two modifications are required to enable the sketch to enumerate with a serial number.
+Sample files with examples of these changes are included with the Katiana package.
+
+\subsubsection SSec_CoreChanges Arduino Core Modification
+
+With a modified Arduino core file (<tt>USBCore.cpp</tt>) it is possible to have the sketch report
+the same serial as the bootloader. 
+Because the VID for bootloader and sketch are different, it's okay to have them report identical S/Ns.
+This solves the changing port number problem and does not require a serial number to be
+specified with each sketch -- it is kept by the booloader instead.
+
+One way to do this is by defining a global function to obtain a custom serial number.
+A <a href="https://en.wikipedia.org/wiki/Weak_symbol"><b>"weak"</b></a>
+version of this function in the core returns a zero length result, indicating that there is no
+custom S/N available. In this case, the core behavior is unchanged.
+
+The sketch may override this function, providing a copy of the serial number
+in bootloader flash. 
+This alters the core's behavior -- causing it to enumerate on USB with the desired S/N.
+Thus, the core's behavior only changes if the overridden function returns 
+a non-zero length result. This scheme does not require any special compile time flags.
+
+Here's an example of what the modifications to USBCore.cpp might look like
+to implement this behavior:
+
+\code
+//
+// this is the new weak function to obtain a custom USB serial number
+// sketches should override it if they wish to provide a serial number
+//
+__attribute__((weak)) uint8_t USB_GetCustomSerialNumber(uint8_t **AsciiString)
+{
+    if (AsciiString) *AsciiString = 0;
+    return 0;
+}
+//
+// this is an existing core function with modifications
+//
+bool SendDescriptor(USBSetup& setup)
+{
+    ...existing code omitted...
+    //
+    else if (setup.wValueL == ISERIAL) {
+            uint8_t *serial;
+            uint8_t len = USB_GetCustomSerialNumber( &serial );
+            if (len)
+            {
+                    return USB_SendStringDescriptor(serial, len, 0);
+            }
+#ifdef PLUGGABLE_USB_ENABLED
+            else
+            {
+                    char name[ISERIAL_MAX_LEN];
+                    PluggableUSB().getShortName(name);
+                    return USB_SendStringDescriptor((uint8_t*)name, strlen(name), 0);
+            }
+#endif
+    }
+    //
+    ...remaining code omitted...
+//    
+\endcode
+
+\subsubsection SSec_SketchChanges Sketch Modifications
+
+The second modification is to add a function to the sketch which overrides the 
+weak function that was added to the Arduino core above.
+Here is an example of that function:
+
+\code
+//
+uint8_t *usbSerial;
+uint8_t usbSerialLength;
+uint8_t usbSerialCached;
+// ===> this overrides the weak function in USBCore.cpp <===
+uint8_t USB_GetCustomSerialNumber(uint8_t **Buffer) 
+{
+    if (! Buffer) return 0;
+    *Buffer = usbSerial;
+    if (usbSerialCached) return usbSerialLength; 
+    usbSerialCached = 1;
+    // usbSerialLength still has its initial value of zero.
+    uint16_t snptr = pgm_read_word(FLASHEND-7);
+    if (snptr == 0x0000u || snptr == 0xffffu) return 0;
+    uint16_t p = snptr;
+    uint8_t cnt = 0;
+    while (cnt < 127)
+    {
+        if (pgm_read_byte(p++) == 0) break;
+        cnt++;
+    }
+    if ((cnt < 12) || (cnt > 126)) return 0;
+    if ( ! (usbSerial = (uint8_t *)malloc(cnt + 1) ) ) return 0;
+    *Buffer = usbSerial;
+    usbSerialLength = cnt;
+    uint8_t k;
+    uint8_t *s = usbSerial;
+    for (k = usbSerialLength; k; k--)
+    {
+	*s++ = pgm_read_byte(snptr++);
+    }
+    *s = 0;     // terminate the string
+    return usbSerialLength;
+}
+//
+\endcode
+
+\subsection SSec_MCUSR Recovering MCUSR
+
+When the MCU is reset, MCUSR contains bits indicating the cause of the reset.
+The bootloader clears this register which means the sketch cannot examine it to 
+find the cause of the last reset. 
+The bootloader provides a work-around for this problem by saving the 
+initial value of MCUSR and passing it to the sketch in an MCU register (R2).
+
+When the bootloader enumerates on USB and attempts to read AVR910 commands prior to
+starting the sketch then the MSB of R2 is turned on.
+This resolves the ambiguity that can occur if the reset source is an external reset
+or the watchdog timer.
+
+<div sytle="align: center"><table>
+<tr><td><b>Reset Source</b></td> <td><b>R2 MSB</b></td> <td><b>Interpretation</b></td></tr>
+<tr> <td>WDT</td> <td>0</td> <td>Sketch Generated</td> </tr>
+<tr> <td>WDT</td> <td>1</td> <td>Arduino Upload</td> </tr>
+<tr> <td>External</td> <td>0</td> <td>Normal reset</td> </tr>
+<tr> <td>External</td> <td>1</td> <td>Double-tap bootloader run</td> </tr>
+</table></div>
+
+The code snippet below shows how the value in R2 can be recovered for use in an Arduino sketch.
+Normally, initializtion code would destroy the value in R2, making it unavailable to the sketch.
+Functions in the <tt>.init0</tt> section are automatically called prior to any other initialization
+code being executed and have access to the un-sullied value of R2.
+This function is called "under the hood", even though it is not referenced elsewhere in the sketch.
+Because of this, the function must also be declared with the <tt>used</tt>
+attribute to prevent the optimizing compiler from stripping it from the linked output image.
+
+\code
+//
+static volatile uint8_t bootMCUSR;
+//
+void
+__attribute__ ((naked))                 // std call/return linkage not required
+__attribute__ ((section (".init0")))    // runs before any other init code
+__attribute__ ((used))                  // prevents optimizer from stripping the function
+saveMCUSR(void)
+{
+    __asm__ __volatile__ (
+	"sts %0,r2\n"
+	: "=m" (bootMCUSR)
+	: 
+    );
+}
+//
+void setup(void)
+{
+    // we can safely examine the value of bootMCUSR here.
+    if (bootMCUSR & _BV(PORF)) ... etc ...
+}
+//
+\endcode
+
+\subsection SSec_API_MemLayout Flash Memory Map
+The boot sector size is determined by the <tt>BOOTSZ</tt> fuse bits.
+The makefile must be manually edited to indicate the following:
+
+<ul>
+    <li>Total amount of flash in kB</li> 
+    <li>Size of boot sector programmed in BOOTSZ fuses in kB.</li> 
+</ul>
+
+If these are not accurately specified, the bootloader won't function. 
+
+The bootloader is always located at the start of the boot section.
+There may be some unused space between the end of bootloader and signature
+bytes, depending on boot section size and which bootloader options are enabled.
+
+<img src="../../MemoryMap.png" width=418 height=401 style="padding: 16px 16px 16px 16px" />
+
+<br />\section Sec_KnownIssues Known Issues:
+
+\par The bootloader has only been tested on ATmega32U4 MCUs.
+While this should work with other MCUs having flash sizes up to 128kB and internal USB hardware,
+only the ATmega32U4 MCU has been verified to work.
+
+\section Sec_Options Project Options
+
+Optional behavior and AVR910 protocol support can be enabled in the <tt>Config/AppConfig.h</tt> file.
+These are all just simple define's except as otherwise noted.
+
+<table>
+ <tr>
+  <th><b>Define Name:</b></th>
+  <th><b>Location:</b></th>
+  <th><b>Description:</b></th>
+ </tr>
+ <tr>
+  <td>ENABLE_SECURITY_CHECKS</td>
+  <td>AppConfig.h</td>
+<td>Guards against invalid flash and EEPROM addresses.</td>
+ </tr>
+ <tr>
+  <td>ENABLE_LED_SUPPORT</td>
+  <td>AppConfig.h</td>
+  <td>Enable da blinky lights.</td>
+ </tr>
+ <tr>
+  <td>LED_DATA_FLASHES</td>
+  <td>AppConfig.h</td>
+  <td>Flash LEDs on receipt and transmission of data.</td>
+ </tr>
+ <tr>
+  <td>LED_START_FLASHES</td>
+  <td>AppConfig.h</td>
+  <td>Number of flashes of the "L" LED at bootloader startup.</td>
+ </tr>
+ <tr>
+  <td>ENABLE_BLOCK_SUPPORT</td>
+  <td>AppConfig.h</td>
+  <td>Memory block read/write support. Must be enabled for Arduino uploads.</td>
+ </tr>
+ <tr>
+  <td>ENABLE_EEPROM_BYTE_SUPPORT</td>
+  <td>AppConfig.h</td>
+  <td>EEPROM memory byte read/write support.</td>
+ </tr>
+ <tr>
+  <td>ENABLE_FLASH_BYTE_SUPPORT</td>
+  <td>AppConfig.h</td>
+  <td>Flash memory byte read/write support.</td>
+ </tr>
+ <tr>
+  <td>ENABLE_LOCK_BYTE_WRITE_SUPPORT</td>
+<td>AppConfig.h</td>
+  <td>Lock byte write support. Not Recommended.</td>
+ </tr>
+ <tr>
+  <td>CUSTOM_USB_SERIAL</td>
+<td>AppConfig.h</td>
+  <td>Bootloader will enumerate with a hardware serial number on USB.
+  Actual S/N is specified elsewhere.</td>
+ </tr>
+ </table>
+
+ 
+It is highly recommended to enable the security check option.
+Without it, users can write to the bootloader flash section, or specify invalid 
+addresses outside the valid range, resulting in writes to memory at unintended locations. 
+While this should not happen with the Arduino IDE, if it does happen it will <em>brick</em> the bootloader
+and it will have to be re-programmed through the ISP port. Is it worth the risk?
+
+ \subsection SSec_HdwrConfig Hardware Configuration
+
+ Some settings should also be checked in the makefile, and adjusted to match the hardware in which the
+ bootloader will be installed.
+
+ <table>
+ <tr>
+  <th><b>Define Name:</b></th>
+  <th><b>Location:</b></th>
+  <th><b>Description:</b></th>
+ </tr>
+ <tr>
+  <td>MCU</td>
+  <td>makefile</td>
+  <td>Set this to your MCU (e.g. atmeta32u4).</td>
+ </tr>
+ <tr>
+  <td>F_USB, F_CPU</td>
+  <td>makefile</td>
+  <td>Set these to the input clock frequency (F_USB) and (optionally) prescaled system
+      clock frequency (F_CPU) in Hertz. Note that F_USB must be either 8 or 16MHz or
+      a compile error will be thrown.</td>
+ </tr>
+ <tr>
+  <td>FLASH_SIZE_KB</td>
+  <td>makefile</td>
+  <td>Set this to the size of flash memory in your MCU.</td>
+ </tr>
+ <tr>
+  <td>BOOT_SECTOR_SIZE_KB</td>
+  <td>makefile</td>
+  <td>Set this to the size of boot sector programmed inot the MCU's fuses.</td>
+ </tr>
+</table>
+
+ <br />\section Sec_Conventions Programming Conventions
+
+ Katiana is written in C. In general, the following conventions are used:
+
+ - Function names are Pascal case, like this: <tt>PascalCase</tt>.
+ - Variable names are Camel case, like this: <tt>camelCase</tt>.
+ - Macro names are all caps with underscores between words, like this: <tt>MACRO_NAME</tt>.
+ - In a few places, macros which can be used like a variable use Camel case.
+
+ <br />\section Sec_License Software License
+ 
+ The original source for this bootloader was BootloaderCDC.c
+ licensed as follows by Dean Camera:
+
+<blockquote>
+<p>
+Copyright 2017  Dean Camera (dean [at] fourwalledcubicle [dot] com)
+</p>
+
+<p>
+Permission to use, copy, modify, distribute, and sell this
+software and its documentation for any purpose is hereby granted
+without fee, provided that the above copyright notice appear in
+all copies and that both that the copyright notice and this
+permission notice and warranty disclaimer appear in supporting
+documentation, and that the name of the author not be used in
+advertising or publicity pertaining to distribution of the
+software without specific, written prior permission.
+</p>
+
+<p>
+The author disclaims all warranties with regard to this
+software, including all implied warranties of merchantability
+and fitness.  In no event shall the author be liable for any
+special, indirect or consequential damages or any damages
+whatsoever resulting from loss of use, data or profits, whether
+in an action of contract, negligence or other tortious action,
+arising out of or in connection with the use or performance of
+this software.
+</p>
+</blockquote>
+
+This heavily modified version of the original source
+is licensed by aweatherguy as follows:
+
+<blockquote>
+<p>Copyright (c) 2017, aweatherguy, all rights reserved.</p>
+
+<p>
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+Neither the name "aweatherguy" nor the
+names of its contributors may be used to endorse or promote products
+derived from this software without specific prior written permission.
+</p>
+
+<p><tt>
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL aweatherguy BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+</tt></p>
+</blockquote>
+
+*/
