@@ -23,35 +23,31 @@ When the bootloader is running, the board's RX and TX LEDs can optionally
 flash as data is being received from and sent to the CDC interface. 
 The "L" LED can also be configured to flash a fixed number of times at bootloader startup.
 
-\subsection SSec_Bennies Benefits
+\subsection SSec_Updates Changes and Improvments
 
-The Katiana bootloader offers some benefits compared to previous USB-based designs:
+The Katiana bootloader is a essentially new version of the original Catiana loader which is distributed
+with Arduino releases as late as 1.8.4 (and maybe later). 
+Here's a list of what's been updated:
 
 <ul>
 <li>Support for system clock prescaling (other than 1:1).
-
 <li>Sketches can determine the cause of an MCU reset. 
 </li>
-
 <li>Custom USB serial numbers may be assigned to each physical board on which the bootloader
   is installed. 
 </li>
-
 <li>Arduino IDE uploads can now program both flash and EEPROM.
 </li>
-
 <li>Address validation protects against accidental or malicious uploads which 
-  would corrupt the bootloader
+  would corrupt the bootloader <br/>
   (useful if BL1 lock bits are not set to protect boot sector).
 </li>
-
-<li>Communications between bootloader and sketch can no longer be accidentally 
+<li>Communications between bootloader and sketch cannot be accidentally 
   interfered with by the sketch.
-
-<li>Bootloader no longer tries to execute sketch when none is present.</li>
+<li>Bootloader no longer executes erased flash when no sketch is present.</li>
 </ul>
 
-\section Sec_Compat Compatibility
+<br/>\section Sec_Compat Compatibility
 
 This bootloader is specifically intended for the ATmega32U4 MCU as used on Arduino boards such as
 the Leonardo and LilyPad USB. It implements Arduino-specific behaviors and 
@@ -61,9 +57,11 @@ or less of flash memory.
 
 Katiana responds to a subset of the Atmel AVR910 command protocol sufficient to support 
 uploads from the Arduino IDE (through avrdude) to work.
-See the source code (<tt>Katiana.c</tt>) for detail on which AVR910 commands are supported.
+Support for various AVR910 commands may be configured in the <tt>AppConfig.h</tt> file. 
 
-\subsection SSec_Info USB Support
+\subsection SSec_Info USB Interface Configuration
+
+The bootloader configures the MCU's USB interface as follows:
 
 <table>
  <tr>
@@ -190,23 +188,6 @@ Before doing this however, it activates the BootKey so the booloader knows that 
 The IDE then waits for the sketch serial port to disappear, and for the bootloader serial port
 to appear. Once this happens it begins sending AVR910 commands to the bootloader.
 
-<br />\section Sec_PidVid USB VIDs and PIDs
-
-If this bootloader is being installed on an existing Arduino board such as Leonardo or 
-LilyPad USB, you should just keep the VID and PID already assigned to the board.
-End of story.
-
-If this is some new thing, the waters become a bit murky.
-For development work, or if you're just making one-off hobby boards for your own use,
-reusing the VIDs/PIDs from Arduino boards is probably okay.
-If you want your own VID along with the rights to all 65,536 associated PIDs it 
-will cost you at least (US)$5000. Yeah, that works for me.
-There are other alternatives available for both personal and commercial developers
-which may be found by performing an internet search on "usb vid pid for development work".
-
-Some operating systems may not be happy if the board enumerates with 
-a VID/PID combination which has not been officially assigned and published by the USB folks.
-
 <br />\section Sec_UsbSerial Custom USB Serial Numbers
 
 The bootloader can be configured to enumerate on USB with a custom hardware serial number.
@@ -216,104 +197,21 @@ This doesn't happen with Arduino boards (such as the Uno) which report serial nu
 Having the bootloader report a serial number fixes this -- the same board will always enumerate
 with the same COM port number.
 
-\subsection SSec_ValidSNs Valid USB Serial Numbers
+For the to be truly useful, the sketch must also enumerate with a serial number for the 
+same reason. 
+Katiana makes the bootloader's serial number available to the sketch so that it may
+report a value without having to directly encode a value into every sketch.
+See the API section below for more on this.
 
-The base USB standard does not specify limitations on the S/N length or what characters
-it may contain. 
-The standard for the USB Mass Storage Class / Bulk-Only Transport (Revision 1.0, Sept 31, 1999)
-is much more restrictive. 
-The recommendations adopted here comply with that standard:
-
-- The serial number must be at least 12 characters long.
-- It must contain only upper case hexadecimal characters (0-9 and A-F).
-- The 80-bit value comprised of VID (16-bits), PID (16-bits), 
-  and last 12 characters of S/N (effectively 48 bits) must be unique.
-  
-This driver enforces the minimum length and character value restrictions.
-Serial numbers longer than 126 characters (508 equivalent bits) are also prohibited.
-
-The bootloader stores the serial number both in flash (as an ASCII string), 
-and SRAM (as a Unicode string).
-Long serial numbers will consume a significant amount of both memories.
-The serial number location in flash is made available to sketches.
-
-\subsection SSec_UniqueSNs Unique USB Serial Numbers
-
-To start with, if your are building commercial products for sale and have an 
-officially assigned VID/PID combination,
-concerns raised below about unique serial numbers are moot.
-
-Consider the requirement that the equivalent 80 bits of VID-PID-S/N need to be unique.
-Heck, since this <em>isn't</em> a mass storage product, the requirement may only be
-that the entire serial number be unique (if longer than 12 characters).
-It is likely that lots of hobbyists would use this bootloader without modifying the
-VID/PID since they are valid numbers. 
-This might even be legal since all they would be doing is adding a serial number to 
-an official Arduino product.
-Technically however, it should be Arduino assigning the serial numbers to guarantee
-uniqueness, and not the end user.
-
-What are the odds that two such boards wind up with the
-exact same serial number? And what would happen if they did?
-First, let's agree to skip over the question of legal issues.
-
-In theory, duplication of serial numbers is a bad thing that should never be allowed to 
-happen and all folks should have their own VID/PID numbers to avoid this. 
-In the real world, for hobbyists this isn't practical.
-If there do happen to be two different Arduino boards which have the exact same 
-80-bit (or longer) ID this won't really be a problem as long as they are not plugged into the 
-same USB host (i.e. PC). The bottom line, is that as long as your personal use and distribution of
-boards is limited in scope, this is <em>not</em> necessarily a huge problem.
-
-To keep the board on the same COM port, the serial number would need to be
-kept constant if the bootloader is ever re-flashed. It might be useful to put a physical
-label on each such board with the assigned serial number for this purpose.
-
-\subsubsection SSec_ransomSNs Pseudo-Random Serial Numbers
-
-If you just start assigning numbers like "000000000001", "000000000002" and so on,
-chances are someone else has done this too. 
-A very good way to mitigate the risks is to assign semi-random 48-bit (or longer)
-serial numbers to  each unit. 
-For example a shell script is included with the bootloader package which 
-generates pseudo-random serial numbers.
-It uses the MD5 hash of some text, including:
-
-- 16 bytes of pseudo-random values from /dev/random
-- Current date and time
-- Long listing of the current directory with lines randomly shuffled
-- Some extra "salt"
-
-\code
-#!/bin/sh
-hash=md5sum  # can change to sha256sum or other hash commands known to the shell
-sum=`( od -N 16 -t x /dev/random ; date ; ls -l | shuf ; echo "$salt" ) 2>&1 | $hash`
-serial=${sum:0:12}
-serial=`echo $serial | tr [:lower:] [:upper:]`
-echo \#pragma once >NewUsbHdwrSerial.h
-echo \#define USB_HDWR_SERIAL \"$serial\" >> NewUsbHdwrSerial.h
-#
-\endcode
-
-The salt can be modified by each individual to further reduce odds of serial number duplication.
-If you use this or a similar technique, the odds of you having the same serial number
-as anyone else are extremely small. 
-
-The example above generates 12-character serial numbers and this should be more than adequate
-for most purposes.
-Longer serial numbers can be generated by taking a bigger subset of the hash 
-(as many as 96 charactes with sha384),
-and this will further decrease the odds of ever having a duplicate serial number.
-That can done by changing the <tt>${sum:0:12}</tt> on the fourth line of the shell
-script above to <tt>${sum:0:32}</tt> to get a 32-character serial number for example.
-
-The shell script above is provided with the Katiana distribution and is named
-<tt>NewUsbHdwrSerial.sh</tt>.
+There is an appendix at the end of this document which discusses the question of
+how to pick a serial number.
 
 \subsection SSec_EnablingUsbSerials Enabling Custom USB S/Ns
 
+To enable custom S/Ns, define the macro <tt>CUSTOM_USB_SERIAL</tt> in the <tt>AppConfig.h</tt> header file.
 The serial number needs to be placed in the file 
-<tt>UsbHdwrSerial.h</tt> prior to building the bootloader, and should look like this:
+<tt>UsbHdwrSerial.h</tt> prior to building the bootloader, and should look someithing like this
+example:
 
 \code
 //
@@ -322,12 +220,29 @@ The serial number needs to be placed in the file
 //
 \endcode
 
-The string must be between 12 and 126 characters long and may only contain upper case
-hexadecimal characters (0-9, A-F). 
-Do not use the exact serial number shown above!
-See above for more on the requirement for unique numbers.
+This file is not supplied with the Katiana package and must be created by the user.
+Technically, the serial number string could contain any Unicode characters in any language, 
+but Katiana only supports ASCII characters and reports only an English language descriptor.
+
+\subsection SSec_validSnChecks Serial Number Validation
+
+As described in the appendix, it may make sense to place some restrictions on user-defined
+USB  serial numbers.
+The restrictions suggested there may be imposed by defining the macro <tt>STRICT_USB_SERIAL</tt>
+in the <tt>AppConfig.h</tt> file. These restrictions are enforced during the build by
+a small program defined in <tt>ValidateUsbHdwrSerial.c</tt>.
+This program is compiled during the build using the native C compiler (<tt>cc</tt>).
+It can be easily modified to support a different set of validation rules.
+To allow unrestricted serial numbers, comment out the definition of <tt>STRICT_USB_SERIAL</tt>
+in <tt>AppConfig.h</tt>.
+
+If validation is enabled, the S/N must be between 12 and 126 characters long and may only 
+contain upper case hexadecimal characters (0-9, A-F). 
+See the appendix for more about the requirement for unique numbers.
 
 <br />\section Sec_Building Building Katiana
+
+The distribution has been built and tested with Cygwin.
 
 <ol>
 <li>Obtain a copy of the LUFA source code; version 170418 is known to work; later versions may work as well.</li>
@@ -339,13 +254,17 @@ See above for more on the requirement for unique numbers.
 <li>If desired, the bootloader's USB PID/VID can be changed in <tt>Descriptors.c</tt>. 
 Beware however that changing these typically requires a custom Boards.txt file in the Arduino
 installation -- that is where USB VID/PID for the sketch are specified.</li>
-<li>If custom USB serial numbers are enabled, create the file <tt>UsbHdwrSerial.h</tt> with the desired USB
+<li>If custom USB serial numbers are enabled, create/edit the file <tt>UsbHdwrSerial.h</tt> with the desired USB
     hardware serial number. The script <tt>NewUsbHdwrSerial.sh</tt> may be used for this purpose if desired.
 <li>Run <tt>make</tt>.</li>
-<li>To get HTML in the <tt>Documentation</tt> folder, run <tt>make doxygen</tt>.</li>
+<li>To generate HTML content in the <tt>Documentation</tt> folder, run <tt>make doxygen</tt>.</li>
+<li>On Windows, edit <tt>Katiana-Bootloader.inf</tt> and change the USB VID/PID specified there to 
+match the VID/PID combinations specified in <tt>Descriptors.c</tt> and in the <tt>Boards.txt</tt> file
+that will be used for building Arduino sketches. This step is <em>not</em> required if a pre-existing
+Arduino VID/PID combination is being used.
 </ol>
 
-AVRDude as used by the Arduino IDE uses only AVR910 block read/write operations for upload, 
+AVRDude as used by the Arduino IDE emits only AVR910 block read/write commands for upload/verification, 
 so it is only necessary to enable block support when building Katiana.
 Flash and EEPROM byte support are not required.
 
@@ -372,6 +291,8 @@ If this option is enabled in the bootloader, copies of <tt>USBCore.cpp</tt> and
 <tt>USBAPI.h</tt> in the <tt>Arduino-Core</tt> folder of this distribution
 must be copied into the Arduino cores subdirectory. You may wish to make backup copies 
 of the original files before replacing them.
+The core files provided in this distribution are valid for Arduino version 1.8.4 and
+may need to be modified to work with future Arduino versions.
 
 <br />\section Sec_Installation Driver Installation
 
@@ -454,6 +375,9 @@ specifies the new <tt>eepdude</tt> programmer, like this:
 
 <blockquote><tt>[board name].upload.tool=eepdude</tt></blockquote>
 
+The only issue with this setup is that uploading a sketch which does not define
+any EEPROM data may cause avrdude to report an error.
+
 <br />\section Sec_API API for Sketches
 
 Information about the bootloader is available to sketches and Arduino core libraries
@@ -490,6 +414,8 @@ Here's an example of macros that could be used to access Katiana's API for sketc
  \code
  uint16_t sig = pgm_read_word( BOOTLOADER_SIGNATURE );
  \endcode
+
+ The Arduino core looks at the boot signature to determine where the BootKey is located.
 
  \subsection SSec_BootKey BootKey API
 
@@ -701,12 +627,12 @@ the signature table and the linker will fail.
 
 <img src="../../MemoryMap.png" width=418 height=401 style="padding: 16px 16px 16px 16px" />
 
-\section Sec_bugfixes Changes and Bug Fixes
+\section Sec_bugfixes Changes/Bug Fixes
 
 Changes from the previous bootloader (Arduino version of Caterina) 
 and fixes for bugs are listed here.
 
-\subsection SSec_Opcode_0xffff Executing Empty Flash
+\par Executing Empty Flash
 
 One low-level bug that is fixed in this design occured when the bootloader was first
 flashed into an erased MCU. The original design would jump to location zero after eight
@@ -717,12 +643,12 @@ seems to indicate that it either executes every such location, or every other su
 depending on the contents of register <tt>r32</tt>.
 Either way this was a minor (probably unnoticeable) bug and has been fixed in this bootloader.
 
-\subsection SSec_BORF Brown-Out Reset Action
+\par Brown-Out Reset Action
 
 The previous design would always enter the bootloader on a brown-out reset, 
 but immediately jump to the sketch on a poer-on reset.
 This seemed inconsistent, and brown-out resets are now treated identically to
-power-on resets; the sketch is immediately started.
+power-on resets -- the sketch is immediately started.
 
 <br />\section Sec_KnownIssues Known Issues:
 
@@ -730,7 +656,11 @@ power-on resets; the sketch is immediately started.
 While this should work with other MCUs having flash sizes up to 128kB and internal USB hardware,
 only the ATmega32U4 MCU has been verified to work.
 
-\section Sec_Options Project Options
+\par Only block read/write has been tested.
+Options for flash and EEPROM byte support and lock byte writing have not been tested at all.
+They are a direct copy from the original Caterina bootloader.
+
+<br/>\section Sec_Options Project Options
 
 Optional behavior and AVR910 protocol support can be enabled in the <tt>Config/AppConfig.h</tt> file.
 These are all just simple define's except as otherwise noted.
@@ -779,22 +709,19 @@ These are all just simple define's except as otherwise noted.
  <tr>
   <td>ENABLE_LOCK_BYTE_WRITE_SUPPORT</td>
 <td>AppConfig.h</td>
-  <td>Lock byte write support. Not Recommended.</td>
+  <td>Enables writing to the lock byte.</td>
  </tr>
  <tr>
   <td>CUSTOM_USB_SERIAL</td>
-<td>AppConfig.h</td>
-  <td>Bootloader will enumerate with a hardware serial number on USB.
-  Actual S/N is specified elsewhere.</td>
+  <td>AppConfig.h</td>
+  <td>Bootloader will enumerate with a hardware serial number on USB.</td>
+ </tr>
+ <tr>
+  <td>STRICT_USB_SERIAL</td>
+  <td>AppConfig.h</td>
+  <td>Validity checks will be applied to USB serial number.</td>
  </tr>
  </table>
-
- 
-It is highly recommended to enable the security check option.
-Without it, users can write to the bootloader flash section, or specify invalid 
-addresses outside the valid range, resulting in writes to memory at unintended locations. 
-While this should not happen with the Arduino IDE, if it does happen it will <em>brick</em> the bootloader
-and it will have to be re-programmed through the ISP port. Is it worth the risk?
 
  \subsection SSec_HdwrConfig Hardware Configuration
 
@@ -813,11 +740,15 @@ and it will have to be re-programmed through the ISP port. Is it worth the risk?
   <td>Set this to your MCU (e.g. atmeta32u4).</td>
  </tr>
  <tr>
-  <td>F_USB, F_CPU</td>
+  <td>F_USB</td>
   <td>makefile</td>
-  <td>Set these to the input clock frequency (F_USB) and (optionally) prescaled system
-      clock frequency (F_CPU) in Hertz. Note that F_USB must be either 8 or 16MHz or
-      a compile error will be thrown.</td>
+  <td>Input clock frequency on XTAL pin(s). 
+      Optional, default is F_CPU.</td>
+ </tr>
+ <tr>
+  <td>F_CPU</td>
+  <td>makefile</td>
+  <td>System clock frequency in Hz (after optional prescaling).</td>
  </tr>
  <tr>
   <td>FLASH_SIZE_KB</td>
@@ -840,9 +771,128 @@ and it will have to be re-programmed through the ISP port. Is it worth the risk?
 <li>Variable names are Camel case, like this: <tt>camelCase</tt>.</li>
 <li>Macro names are all caps with underscores between words, like this: <tt>MACRO_NAME</tt>.</li>
 <ul><li>In a few places, macros which can be used like a variable use Camel case.</li></ul>
+<li>Indentation levels are four spaces and tab characters are not generally used.</li>
 </ul>
 
- <br />\section Sec_License Software License
+\subsection SSec_lineendings Line Endings
+
+The author edits many of the source files in VisualStudio and they may contain either
+LF or CR/LF line endings. 
+It is recommended to use git's <tt>autocrlf</tt> option to manage this.
+
+<br />\section Sec_PidVid Appendix: USB VIDs and PIDs
+
+If this bootloader is being installed on an existing Arduino board such as Leonardo or 
+LilyPad USB, you should just keep the VID and PID already assigned to the board.
+End of story.
+
+If this is some new thing, the waters become a bit murky.
+For development work, or if you're just making one-off hobby boards for your own use,
+reusing the VIDs/PIDs from Arduino boards is probably okay.
+If you want your own VID along with the rights to all 65,536 associated PIDs it 
+will cost you at least (US)$5000. Yeah, that works for me.
+There are other alternatives available for both personal and commercial developers
+which may be found by performing an internet search on "usb vid pid for development work".
+
+Some operating systems may not be happy if the board enumerates with 
+a VID/PID combination which has not been officially assigned and published by the USB folks.
+
+\subsection SSec_ValidSNs Valid USB Serial Numbers
+
+The base USB standard does not specify limitations on the S/N length or what characters
+it may contain. It only requires a UTF-16 lil' endian Unicode string.
+The standard for the USB Mass Storage Class / Bulk-Only Transport (Revision 1.0, Sept 31, 1999)
+is much more restrictive. 
+The recommendations adopted here comply with that standard:
+
+- The serial number must be at least 12 characters long.
+- It must contain only upper case hexadecimal characters (0-9 and A-F).
+- The 80-bit value comprised of VID (16-bits), PID (16-bits), 
+  and last 12 characters of S/N (effectively 48 bits) must be unique.
+  
+This driver enforces the minimum length and character value restrictions.
+Serial numbers longer than 126 characters (508 equivalent bits) are also prohibited.
+
+The bootloader stores the serial number both in flash (as an ASCII string), 
+and SRAM (as a Unicode string).
+Long serial numbers will consume a significant amount of both memories.
+The serial number location in flash is made available to sketches.
+
+\subsection SSec_UniqueSNs Unique USB Serial Numbers
+
+To start with, if your are building commercial products for sale and have an 
+officially assigned VID/PID combination,
+concerns raised below about unique serial numbers are moot.
+
+Consider the requirement that the equivalent 80 bits of VID-PID-S/N need to be unique.
+Heck, since this <em>isn't</em> a mass storage product, the requirement may only be
+that the entire serial number be unique (if longer than 12 characters).
+It is likely that lots of hobbyists would use this bootloader without modifying the
+VID/PID since they are valid numbers. 
+This might even be legal since all they would be doing is adding a serial number to 
+an official Arduino product.
+Technically however, it should be Arduino assigning the serial numbers to guarantee
+uniqueness, and not the end user.
+
+What are the odds that two such boards wind up with the
+exact same serial number? And what would happen if they did?
+First, let's agree to skip over the question of legal issues.
+
+In theory, duplication of serial numbers is a bad thing that should never be allowed to 
+happen and all folks should have their own VID/PID numbers to avoid this. 
+In the real world, for hobbyists this isn't practical.
+If there do happen to be two different Arduino boards which have the exact same 
+80-bit (or longer) ID this won't really be a problem as long as they are not plugged into the 
+same USB host (i.e. PC). The bottom line, is that as long as your personal use and distribution of
+boards is limited in scope, this is <em>not</em> necessarily a huge problem.
+
+To keep the board on the same COM port, the serial number would need to be
+kept constant if the bootloader is ever re-flashed. It might be useful to put a physical
+label on each such board with the assigned serial number for this purpose.
+
+\subsubsection SSec_ransomSNs Pseudo-Random Serial Numbers
+
+If you just start assigning numbers like "000000000001", "000000000002" and so on,
+chances are someone else has done this too. 
+A very good way to mitigate the risks is to assign semi-random 48-bit (or longer)
+serial numbers to  each unit. 
+A shell script is included with the bootloader package which 
+generates pseudo-random serial numbers (with lots of semi-meaningless overkill).
+It gets the serial number from a cryptographic hash of some semi-random text, including:
+
+- 16 bytes of pseudo-random values from /dev/random
+- Current date and time
+- Long listing of the current directory with lines randomly shuffled
+- Some extra "salt"
+
+\code
+#!/bin/sh
+salt='Salt of the Earth'  # change this as you please
+hash=md5sum  # can change to sha256sum or other hash commands known to the shell
+sum=`( od -N 16 -t x /dev/random ; date ; ls -l | shuf ; echo "$salt" ) 2>&1 | $hash`
+serial=${sum:0:12}
+serial=`echo $serial | tr [:lower:] [:upper:]`
+echo \#pragma once >NewUsbHdwrSerial.h
+echo \#define USB_HDWR_SERIAL \"$serial\" >> NewUsbHdwrSerial.h
+#
+\endcode
+
+The salt can be modified by each individual to further reduce odds of serial number duplication.
+If you use this or a similar technique, the odds of you having the same serial number
+as anyone else are extremely small. 
+
+The example above generates 12-character serial numbers and this should be more than adequate
+for most purposes.
+Longer serial numbers can be generated by taking a bigger subset of the hash 
+(as many as 96 charactes with sha384),
+and this will further decrease the odds of ever having a duplicate serial number.
+That can done by changing the <tt>${sum:0:12}</tt> on the fourth line of the shell
+script above to <tt>${sum:0:32}</tt> to get a 32-character serial number for example.
+
+The shell script above is provided with the Katiana distribution and is named
+<tt>NewUsbHdwrSerial.sh</tt>.
+
+ <br />\section Sec_License Appendix: Software License
  
  The original source for this bootloader was BootloaderCDC.c
  licensed as follows by Dean Camera:

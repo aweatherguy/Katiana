@@ -3,7 +3,7 @@
 #include <string.h>
 #include "Config/AppConfig.h"
 
-#if defined( CUSTOM_USB_SERIAL )
+#if defined( CUSTOM_USB_SERIAL ) && defined( STRICT_USB_SERIAL )
 #include "UsbHdwrSerial.h"
 
 const unsigned char serial[] = USB_HDWR_SERIAL;

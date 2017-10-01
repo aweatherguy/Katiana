@@ -92,17 +92,9 @@ include $(DMBS_PATH)/avrdude.mk
 include $(DMBS_PATH)/atprogram.mk
 
 CheckUsbSerial: ValidateUsbHdwrSerial.c
-	@echo 
-	@echo --------- Validating USB Serial Number -----------
-	@echo 
-	@echo Tests are defined in ValidateUsbHdwrSerial.c...
-	@echo
 	cc ValidateUsbHdwrSerial.c -o TmpExec.exe
 	./TmpExec.exe
 	@rm -f TmpExec.exe
-	@echo
-	@echo ---------- USB Serial Number is Valid ------------
-	@echo
 
 RemoveUsbSerialCheck:
 	rm -f TmpExec.exe

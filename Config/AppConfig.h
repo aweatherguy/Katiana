@@ -86,6 +86,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // To have a custom USB serial number reported:
 //
 	#define CUSTOM_USB_SERIAL
+    #define STRICT_USB_SERIAL
 //
 // these options are not required for normal Arduino IDE uploads to work
 // there is really no reason to turn them on unless you are using a
