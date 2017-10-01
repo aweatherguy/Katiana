@@ -207,7 +207,7 @@ static volatile uint8_t Timeout __attribute__ ((section (".noinit")));
 When LED start flashes are enabled, this is used in the timer compare match ISR to
 count the number of flashes generated.
 */
-static volatile uint8_t ledFlashCount __attribute__ ((section (".init0")));
+static volatile uint8_t ledFlashCount __attribute__ ((section (".noinit")));
 #endif
 
 /** 
@@ -374,8 +374,10 @@ __attribute__ ((OS_main)) __attribute__ ((section (".init9")))
 #endif
 main(void)
 {
-    /* Setup hardware required for the bootloader */
-    SetupHardware();
+    //
+    // Setup minimal amount of hardware required to get started.
+    //
+    SetupMinimalHardware();
 
     bootKey = 0;
 
@@ -388,15 +390,10 @@ main(void)
 #if defined(ENABLE_LED_SUPPORT) && (LED_START_FLASHES > 0)
     ledFlashCount = LED_START_FLASHES << 1;
 #endif
-
-    /*
-       Not sure if this is necessary? 
-       Does the USB host always set line encoding before reading it? If so, this is not required.
-       Being static, cdcPortSettings has already been zeroed during init and that is the proper init
-       value for all fields except for DataBits. By setting only DataBits here compared to doing
-       it in the declaration saves two bytes of flash.
-    */
-    cdcPortSettings.DataBits = 8;
+    //
+    // We're going to run the bootloader and that requires a bit more hardware initialization
+    //
+    SetupNormalHardware();
 
     do
     {
@@ -408,11 +405,10 @@ main(void)
 	{
 	    ProcessAVR910Command();
 	    USB_USBTask();
-
-	    /** 
-		The command processor may leave one of the LEDs on. Make sure
-		they are both off at the end of each pass through this loop.
-	    */
+        //
+        // The command processor may leave one of the LEDs on. Make sure
+        // they are both off at the end of each pass through this loop.
+	    //
 	    LEDs_RX_Off();
 	    LEDs_TX_Off();
 	}
@@ -429,11 +425,11 @@ main(void)
 }
 
 /** 
-  Configures hardware (except USB) as required for the bootloader.
-  Changes from the normal reset state are kept to a minimum so that there
-  is not much work required to undo the changes before starting a sketch.
+  Configures minimum amount of hardware to get started with.
+  More setup will be required of the bootloader needs to be run
+  (instead of jumping right into the sketch).
 */
-static void SetupHardware(void)
+static void SetupMinimalHardware(void)
 {
     MCUSR = 0;
 
@@ -462,12 +458,28 @@ static void SetupHardware(void)
 #else
 #error Invalid clock frequencies: (F_USB / F_CPU) must be an integer power of two betwen 1 and 256.
 #endif
+}
 
+/**
+Configures additional hardware that's required to run the bootloader.
+SetupMinimalHardware() must be called before this function.
+*/
+static void SetupNormalHardware()
+{
     // Relocate the interrupt vector table to the bootloader section
     MCUCR = (1 << IVCE);
     MCUCR = (1 << IVSEL);
-
+    /*
+       Not sure if this is necessary? 
+       Does the USB host always set line encoding before reading it? If so, this is not required.
+       Being static, cdcPortSettings has already been zeroed during init and that is the proper init
+       value for all fields except for DataBits. By setting only DataBits here compared to doing
+       it in the declaration saves two bytes of flash.
+    */
+    cdcPortSettings.DataBits = 8;
     USB_Init();
+
+    LEDs_Init();
     //
     // Start timer 1 running in CTC mode with a 25Hz interrupt rate
     // It will count up to the value in OCR1A then reset back to zero again, generating
@@ -478,7 +490,6 @@ static void SetupHardware(void)
     TCCR1B = TCCR1B_CS_25HZ | _BV(WGM12);   // setup the prescaler and CTC mode.
     // TCNT1 = 0;			    // After MCU reset, TCNT1 is cleared; no need do that here.
 
-    LEDs_Init();
 }
 
 /** 

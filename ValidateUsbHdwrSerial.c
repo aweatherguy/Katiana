@@ -13,6 +13,8 @@ int main()
     int rc = 0;
     int n = strlen(serial);
     
+    printf("\n---------- Validating USB Serial Number ----------\n\n");
+
     if (n < 12)
     {
         printf("Error: USB serial number length is less than 12.\n");
@@ -35,6 +37,11 @@ int main()
             break;
         }
     }
+
+    if (rc) printf("       See ValidateUsbHdwrSerial.c for details.\n");
+
+    printf( rc ? "\n**********  USB Serial Number NOT Valid **********\n\n" :
+                   "----------  USB Serial Number is  Valid ----------\n\n");
 
     return rc;
 }

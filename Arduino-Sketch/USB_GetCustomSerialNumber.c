@@ -1,6 +1,19 @@
 //
-// returns the serial number obtained from Katiana flash, if present.
+// This one doesn't need to be initialized...
+//
+static uint8_t *usbSerial __attribute__((section(".noinit")));
+//
+// ...but these do.
+//
+static uint8_t usbSerialLength;     // initialized to zero at startup
+static uint8_t usbSerialCached;     // ditto
+//
+// overrides the weak function defined in USBCore.cpp, returning the serial number
+// stored in Katiana flash (if it's there).
 // reads from flash the first time called, thereafter uses value cached in SRAM.
+// If return value > 0, then Buffer points to null terminated string in SRAM,
+// and the return value is length of the string (less terminating null).
+// If return value == 0, no serial number is available.
 //
 uint8_t USB_GetCustomSerialNumber(uint8_t **Buffer)
 {
@@ -15,12 +28,6 @@ uint8_t USB_GetCustomSerialNumber(uint8_t **Buffer)
     // It is bootloader flash as a simple ASCII null terminatede string.
     // We have to read it once to find the length, then malloc() the memory 
     // to hold it. Then read it again to copy it.
-    //
-    // Because we have not yet cached flash S/N information in SRAM,
-    // the following variables will still have their initial values
-    // of zero that were set in the sketch startup code:
-    //
-    //          usbSerialLength, usbSerial, usbSerialCached
     //
     usbSerialCached = 1;
 

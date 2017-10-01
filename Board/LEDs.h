@@ -91,7 +91,11 @@ extern "C" {
 
 #if defined(ENABLE_LED_SUPPORT)
 
-#if 0
+// 
+// Edit to specify the PORT, DDR and BIT for each of the three LEDs
+// Also specify the bit value when the LED is turned on..."1" or "0" ?
+//
+
 // Leonardo
 #define LEDS_RX_PORT	PORTB
 #define LEDS_TX_PORT	PORTD
@@ -105,30 +109,39 @@ extern "C" {
 #define LEDS_TX_BIT	0x20
 #define LEDS_L_BIT	0x80
 
+#define LEDS_RX_ACTIVE  0
+#define LEDS_TX_ACTIVE  0
+#define LEDS_L_ACTIVE   1
+
+
+// ===============================================================
+// =============== END OF USER CONFIGURATION SECTION =============
+// ===============    DO NOT EDIT BELOW THIS LINE    =============
+// ===============================================================
+
+#if LEDS_RX_ACTIVE
+#define LEDS_RX_ON	|=
+#define LEDS_RX_OFF	&= ~
 #else
-// WxRecorder (LED_L not implemented)
-#define LEDS_RX_PORT	PORTC
-#define LEDS_TX_PORT	PORTB
-#define LEDS_L_PORT	PORTB
-
-#define LEDS_RX_DDR	DDRC
-#define LEDS_TX_DDR	DDRB
-#define LEDS_L_DDR	DDRB
-
-#define LEDS_RX_BIT	0x40
-#define LEDS_TX_BIT	0x40
-#define LEDS_L_BIT	0x10
-
+#define LEDS_RX_OFF	|=
+#define LEDS_RX_ON	&= ~
 #endif
 
-#define LEDS_RX_ON	&= ~
-#define LEDS_RX_OFF	|=
-
-#define LEDS_TX_ON	&= ~
+#if LEDS_TX_ACTIVE
+#define LEDS_TX_ON	|=
+#define LEDS_TX_OFF	&= ~
+#else
 #define LEDS_TX_OFF	|=
+#define LEDS_TX_ON	&= ~
+#endif
 
+#if LEDS_L_ACTIVE
 #define LEDS_L_ON	|=
 #define LEDS_L_OFF	&= ~
+#else
+#define LEDS_L_OFF	|=
+#define LEDS_L_ON	&= ~
+#endif
 
 /** 
 Public Interface - May be used in end-application.

@@ -6,7 +6,7 @@ documentation pages. It is not a project source file.
 
 /** 
 
-\mainpage Katiana Bootloader for Arduino
+\mainpage Katiana Bootloader for Arduino (version 2.1)
 
 <br />\section Sec_Description Project Description
 
@@ -28,6 +28,8 @@ The "L" LED can also be configured to flash a fixed number of times at bootloade
 The Katiana bootloader offers some benefits compared to previous USB-based designs:
 
 <ul>
+<li>Support for system clock prescaling (other than 1:1).
+
 <li>Sketches can determine the cause of an MCU reset. 
 </li>
 
@@ -35,15 +37,16 @@ The Katiana bootloader offers some benefits compared to previous USB-based desig
   is installed. 
 </li>
 
-<li>Communications between bootloader and sketch can no longer be accidentally 
-  interfered with by the sketch.
-
 <li>Arduino IDE uploads can now program both flash and EEPROM.
 </li>
 
 <li>Address validation protects against accidental or malicious uploads which 
-  would corrupt the bootloader.
+  would corrupt the bootloader
+  (useful if BL1 lock bits are not set to protect boot sector).
 </li>
+
+<li>Communications between bootloader and sketch can no longer be accidentally 
+  interfered with by the sketch.
 
 <li>Bootloader no longer tries to execute sketch when none is present.</li>
 </ul>

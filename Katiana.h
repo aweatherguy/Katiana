@@ -199,7 +199,8 @@ work better. This may in fact not help but it won't hurt either.
 
 */
 
-static void SetupHardware(void);
+static void inline SetupMinimalHardware(void);
+static void inline SetupNormalHardware(void);
 
 /** 
   Declaring this with the noreturn attribute saves a few bytes of flash.
