@@ -80,7 +80,7 @@ Almost all global SRAM variables are not initialized.
 This saves a (very small) amount of time at startup. The only excections are:
 
 - cdcPortSettings: by zeroing this we save a couple bytes of code space
-  over specifying all of the pertinent fields in an explicit initialization.
+over specifying all of the pertinent fields in an explicit initialization.
 
 Everything possible is declared static to assist the compiler in optimizations.
 This seems to save a significant amount of program code space (100 bytes or so).
@@ -117,24 +117,26 @@ This variable IS initialized to zeros, and we depend on that in the code.
 static CDC_LineEncoding_t cdcPortSettings;
 
 /** 
- <h3>Address Counters</h3>
+<h3>Address Counters</h3>
 
- We store the value sent to us from the host with the AVR910 Set Address command here. 
- For flash this is a word address and for EEPROM it is a byte address.
- With flash, this can address up to 64k words or 128kB of flash.
- With EEPROM, we can only address up to 64kB of EEPROM.
+We store the value sent to us from the host with the AVR910 Set Address command here. 
+For flash this is a word address and for EEPROM it is a byte address.
+With flash, this can address up to 64k words or 128kB of flash.
+With EEPROM, we can address up to 64kB of EEPROM.
 
- These values are auto-incremented during read and write operations.
+These values are auto-incremented during read and write operations.
 
- When programming flash, we must double the AVR910 address to get the byte address in flash.
- For MCUs with more than 64kB of flash, the byte address will overflow when 
- the word address >= 0x8000. This overflow is okay because we keep the RAMPZ register correctly 
- set so that loading the byte address into the Z register yields the correct result.
+When programming flash, we must double the AVR910 address to get the byte address in flash.
+For MCUs with more than 64kB of flash, the byte address will overflow when 
+the word address >= 0x8000. This overflow is okay because we keep the RAMPZ register correctly 
+set so that loading the byte address into the Z register yields the correct result.
+See the IncrementAddress() function for details.
 
- When programming EEPROM, the AVR910 address is the byte address into EEPROM and we don't 
- do use the avrByteAddress variable.
+When programming EEPROM, the AVR910 address is the byte address into EEPROM and 
+we the flashByteAddress variable is a don't care.
 
- \see avrByteAddress
+\see flashByteAddress
+\see IncrementAddress
 */
 static uint16_t avr910Address __attribute__ ((section (".noinit")));
 /** 
@@ -143,13 +145,13 @@ It is however kept in sync with avr910Address at all times.
 
 \see avr910Address
 */
-static uint16_t avrByteAddress __attribute__ ((section (".noinit")));
+static uint16_t flashByteAddress __attribute__ ((section (".noinit")));
 #if !defined(__DOXYGEN__)
 #define avr910AddressLsb (*(uint8_t *)&avr910Address)
 #define avr910AddressMsb (* (((uint8_t *)&avr910Address) + 1))
 #endif
 
-#if defined(ENABLE_FLASH_BYTE_SUPPORT) || defined(__DOXYGEN__)
+#if defined(ENABLE_FLASH_BYTE_SUPPORT) && !defined(__DOXYGEN__)
 /**
 If flash byte support is enabled, we use a 2-byte buffer to assemble two bytes into a word
 for programming to flash. There is also a cast defined to access this buffer as an unsigned word.
@@ -159,14 +161,14 @@ static uint8_t flashByteBuffer[2] __attribute__ ((section (".noinit")));
 #endif
 
 /** 
-  <h3>Boot Key</h3>
-  Newer version of Arduino cores will pass a special "boot key" to the boot loader in a pre-arranged
-  location in SRAM. That location was originally 0x0800, but has since been moved to (RAMEND-1) to 
-  avoid the possibility of a sketch storing data at 0x0800. If the sketch happened to store the value
-  0x7fff there (very remote possibility), then the boot behavior resulting from a sketch-induced WDT
-  reset would change unexpectedly.
-  
-  When this code starts up, it saves the value stored at the boot key location in a global variable.
+<h3>Boot Key</h3>
+Newer version of Arduino cores will pass a special "boot key" to the boot loader in a pre-arranged
+location in SRAM. That location was originally 0x0800, but has since been moved to (RAMEND-1) to 
+avoid the possibility of a sketch storing data at 0x0800. If the sketch happened to store the value
+0x7fff there (very remote possibility), then the boot behavior resulting from a sketch-induced WDT
+reset would change unexpectedly.
+
+When this code starts up, it saves the value stored at the boot key location in a global variable.
 */
 #define bootKey (*(volatile uint16_t *)(RAMEND-1))
 /** 
@@ -178,31 +180,31 @@ static uint16_t originalBootKey __attribute__ ((section (".noinit")));
 #endif
 
 /**
-  Sometimes the sketch would like to know the reason for the last MCU reset when it starts.
-  We save a copy of MCUSR at the beginning so we can pass it to the sketch.
+Sometimes the sketch would like to know the reason for the last MCU reset when it starts.
+We save a copy of MCUSR at the beginning so we can pass it to the sketch.
 */
 static uint8_t initialMCUSR __attribute__ ((section (".noinit")));
 
 /**
- This is set based on whether the reset vector at location zero is all ones or not.
- if a sketch is loaded, the reset vector will not be all ones.
+This is set based on whether the reset vector at location zero is all ones or not.
+if a sketch is loaded, the reset vector will not be all ones.
 */
 static volatile bool sketchPresent __attribute__ ((section (".noinit")));
 
 /**
- Timeout is decremented in the Timer 1 compare match ISR and stops when it reaches zero.
- This is used to time certain behaviors in the bootloader.
- Timeout ticks are  at 25Hz, 40ms per tick. 
- 8 seconds = 200 ticks, 760ms = 19 ticks, etc
+timeout is decremented in the Timer 1 compare match ISR and stops when it reaches zero.
+This is used to time certain behaviors in the bootloader.
+timeout ticks are  at 25Hz, 40ms per tick. 
+8 seconds = 200 ticks, 760ms = 19 ticks, etc
 */
-static volatile uint8_t Timeout __attribute__ ((section (".noinit")));
+static volatile uint8_t timeout __attribute__ ((section (".noinit")));
 #if !defined(__DOXYGEN__)
 #define TIMEOUT_PERIOD			200
 #define SHORT_TIMEOUT_PERIOD		 12
 #define EXT_RESET_TIMEOUT_PERIOD	 19
 #endif
 
-#if (defined(ENABLE_LED_SUPPORT) && (LED_START_FLASHES > 0)) || defined(__DOXYGEN__)
+#if (LED_START_FLASHES > 0) || defined(__DOXYGEN__)
 /**
 When LED start flashes are enabled, this is used in the timer compare match ISR to
 count the number of flashes generated.
@@ -211,32 +213,39 @@ static volatile uint8_t ledFlashCount __attribute__ ((section (".noinit")));
 #endif
 
 /** 
-  We need a small function in the to make copies of important data before it
-  gets overwritten by the initialization code:
-  
-  - A copy of the boot key passed from the sketch, and
-  - The value of MCUSR which contains the cause of the reset which has started the boot loader.
-    While MCUSR may not get altered by startup code, this is extra insurance.
+We need a small function in the to make copies of important data before it
+gets overwritten by the initialization code:
+
+- A copy of the boot key passed from the sketch, and
+- The value of MCUSR which contains the cause of the reset which has started the boot loader.
+While MCUSR may not get altered by startup code, this is extra insurance.
 */
 void 
 #if !defined(__DOXYGEN__)   // doxygen barfs on these attribute declarations. bad dog. no biscuit.
-__attribute__ ((naked)) 
-__attribute__ ((section (".init0"))) 
-__attribute__ ((used))	    // makes sure the compiler won't strip this function
+    __attribute__ ((naked)) 
+    __attribute__ ((section (".init0"))) 
+    __attribute__ ((used))	    // makes sure the compiler won't strip this function
 #endif
-SaveCriticalInfo(void)
+    SaveCriticalInfo(void)
 {
     initialMCUSR    = MCUSR;
     originalBootKey = bootKey;
 }
 
-/** 
-  Performs a minimal amount of cleanup and then jumps to the reset vector
-  (at location zero) to start the arduino sketch.
-  It passes the initial value in MCUSR to the sketch in register r2.
-  Do NOT call this function if there is no sketch loaded!!!
+static void __attribute__((noinline)) SetTimeout(uint8_t howLong)
+{
+    cli();
+    timeout = howLong;
+    sei();
+}
 
-  \param[in] initialMCUSR is the value to be passed to  the sketch in MCU register <tt>r2</tt>.
+/** 
+Performs a minimal amount of cleanup and then jumps to the reset vector
+(at location zero) to start the arduino sketch.
+It passes the initial value in MCUSR to the sketch in register r2.
+Do NOT call this function if there is no sketch loaded!!!
+
+\param[in] initialMCUSR is the value to be passed to  the sketch in MCU register <tt>r2</tt>.
 */
 static void StartSketch(uint8_t initialMCUSR)
 {
@@ -259,27 +268,29 @@ static void StartSketch(uint8_t initialMCUSR)
     // for a code example showing how to do this.
     //
     __asm__ __volatile__ (
-	"mov r2, %0\n\t"	    \
-	"jmp 0x0000\n"
-	:
-	: "r" (initialMCUSR)
-    );
+        "mov r2, %0\n\t"	    \
+        "jmp 0x0000\n"
+        :
+    : "r" (initialMCUSR)
+        );
+
+    for (;;);   // we never get here but this gets rid of compiler warning.
 }
 
 /** 
-  This function implements Arduino-specific reset/boot behavior.
-  Immediately on a reset, we save the current value at the boot key memory location and then zero it.
-  The ONLY way the original boot key will be equal to BOOT_KEY is if the sketch modified
-  it to be so. If the sketch does this, the following behaviors in the boot loader will change:
- 
-  1) On an external reset, the bootloader will pause for 750ms then jump into the sketch.
-     This provides a window in which the user can generate a 2nd external reset, and this
-     will cause the bootloader to run with an 8 second timeout.
- 
-  2) If reset was due to WDT, the sketch will be restarted immediately with no delay.
-     This is how the Arduino core causes a reboot when the CDC COM port is touched at 1200 baud.
- 
-  Do NOT call this function if there is no sketch present!!!
+This function implements Arduino-specific reset/boot behavior.
+Immediately on a reset, we save the current value at the boot key memory location and then zero it.
+The ONLY way the original boot key will be equal to BOOT_KEY is if the sketch modified
+it to be so. If the sketch does this, the following behaviors in the boot loader will change:
+
+1) On an external reset, the bootloader will pause for 750ms then jump into the sketch.
+This provides a window in which the user can generate a 2nd external reset, and this
+will cause the bootloader to run with an 8 second timeout.
+
+2) If reset was due to WDT, the sketch will be restarted immediately with no delay.
+This is how the Arduino core causes a reboot when the CDC COM port is touched at 1200 baud.
+
+Do NOT call this function if there is no sketch present!!!
 */
 static void inline SketchStartLogic(void)
 {
@@ -288,39 +299,38 @@ static void inline SketchStartLogic(void)
     //
     if ( initialMCUSR & (_BV(PORF) | _BV(BORF)) )
     {	
-	StartSketch( initialMCUSR );
-	return;
+        StartSketch( initialMCUSR );
+        return;
     } 
     //
     // if the boot key is active, the don't run the sketch...
     //
     if (originalBootKey == BOOT_KEY) return;
     //
-    // here, the boot cause is one of the following: External, WDT, Brown Out, JTAG, USB.
+    // here, the boot cause is one of the following: External, WDT, JTAG, USB.
     // special behaviors only occur with external and WDT resets. All others
     // will fail the following chesks and return to run the bootloader.
     //
     if ( initialMCUSR & _BV(EXTRF) )
     {
-	// make the boot key active so that another external reset within the 750ms
-	// window will cause the boot loader to run instead of winding up here again.
-	bootKey = BOOT_KEY; 
-	//
-	// setup a 750ms timeout
-	//
-	Timeout = EXT_RESET_TIMEOUT_PERIOD;
-	sei();  // Enable interrupts, so we can use timer1 to track our time in the bootloader
-	//
-	// This is a 750ms window in which the user can generate an external reset.
-	// That will force the boot loader to run, instead of us starting the sketch
-	// If the 750ms period expires with no external reset, the bootloader will run
-	//
-	while (Timeout);
-	//
-	// timeout expired without another external reset, so we can load the sketch now.
-	//
-	bootKey = 0;			// set the bootKey back to inactive. 
-	StartSketch( initialMCUSR );
+        // make the boot key active so that another external reset within the 750ms
+        // window will cause the boot loader to run instead of winding up here again.
+        bootKey = BOOT_KEY; 
+        //
+        // setup a 750ms timeout
+        //
+        SetTimeout( EXT_RESET_TIMEOUT_PERIOD ); // this will enable interrupts too
+        //
+        // This is a 750ms window in which the user can generate an external reset.
+        // That will force the boot loader to run, instead of us starting the sketch
+        // If the 750ms period expires with no external reset, the bootloader will run
+        //
+        while (timeout);
+        //
+        // timeout expired without another external reset, so we can load the sketch now.
+        //
+        bootKey = 0;			// set the bootKey back to inactive. 
+        StartSketch( initialMCUSR );
     } 
     //
     // On a watchdog reset, if the BOOT_KEY is inactive and there's a sketch, we go
@@ -333,7 +343,7 @@ static void inline SketchStartLogic(void)
     //
     if ( initialMCUSR & _BV(WDRF) )
     {
-	StartSketch( initialMCUSR );
+        StartSketch( initialMCUSR );
     }
 }
 
@@ -348,29 +358,30 @@ static void BootRwwEnable( void )
 }
 
 /** 
-  main() performs these tasks:
-  - Initialize hardware
-  - Check for loaded sketch and jump to it under Arduino-specific conditions
-  - Run the bootloader
-  - Start sketch if requested by bootloader
+main() performs these tasks:
+- Initialize hardware
+- Check for loaded sketch and jump to it under Arduino-specific conditions
+- Run the bootloader
+- Start sketch if requested by bootloader
 
-  The actual signature of this function is as follows:
+The actual signature of this function is as follows:
 
-   \code
-   __attribute__ ((OS_main)) __attribute__ ((section (".init9"))) main() { ... }
-   \endcode
+\code
+__attribute__ ((OS_main)) __attribute__ ((section (".init9"))) main() { ... }
+\endcode
 
-   It is in section .init9; this removes the interrupt vector table
-   we don't need. It is also 'OS_main', which means the compiler does not
-   generate any entry or exit code itself (but unlike 'naked', it doesn't
-   supress some compile-time options we want.)
-   This idea was borrowed from the Optiboot project.
+It is in section .init9; this removes the interrupt vector table
+we don't need. It is also 'OS_main', which means the compiler does not
+generate any entry or exit code itself (but unlike 'naked', it doesn't
+supress some compile-time options we want.)
+This idea was borrowed from the Optiboot project.
 
-   main() is referenced from startup code and therefore cannot be static.
+main() is referenced from startup code and therefore cannot be static.
 */
 int
 #if !defined(__DOXYGEN__)   // doxygen barfs on these attribute declarations! bad dog. no biscuit.
-__attribute__ ((OS_main)) __attribute__ ((section (".init9")))
+__attribute__ ((OS_main)) 
+__attribute__ ((section (".init9")))
 #endif
 main(void)
 {
@@ -386,9 +397,13 @@ main(void)
     if (sketchPresent) SketchStartLogic();
 
     initialMCUSR |= 0x80u;	// flag the fact that the boot loader did not immediately start the sketch.
-    
-#if defined(ENABLE_LED_SUPPORT) && (LED_START_FLASHES > 0)
-    ledFlashCount = LED_START_FLASHES << 1;
+
+#if (LED_START_FLASHES > 0)
+    //
+    // Timer 1 runs at 25Hz; the ISR will toggle the led at 25Hz/4 which 
+    // gives a flash rate of 25Hz/8 or about 3Hz
+    //
+    ledFlashCount = (LED_START_FLASHES << 2) + 1;
 #endif
     //
     // We're going to run the bootloader and that requires a bit more hardware initialization
@@ -397,21 +412,23 @@ main(void)
 
     do
     {
-	cli();
-	Timeout = TIMEOUT_PERIOD;
-	sei();
+        SetTimeout( TIMEOUT_PERIOD );
 
-	while (Timeout)
-	{
-	    ProcessAVR910Command();
-	    USB_USBTask();
-        //
-        // The command processor may leave one of the LEDs on. Make sure
-        // they are both off at the end of each pass through this loop.
-	    //
-	    LEDs_RX_Off();
-	    LEDs_TX_Off();
-	}
+        while (timeout)
+        {
+            ProcessAVR910Command();
+            //
+            // Note: you can save two bytes by copying the contents of USB_DeviceTask()
+            // here instead of calling it...See USBTask.c in LUFA/Drivers/USB/Core.
+            //
+            USB_USBTask();
+            //
+            // The command processor may leave one of the LEDs on. Make sure
+            // they are both off at the end of each pass through this loop.
+            //
+            LEDs_RX_Off();
+            LEDs_TX_Off();
+        }
     }
     while (!sketchPresent);
 
@@ -425,9 +442,9 @@ main(void)
 }
 
 /** 
-  Configures minimum amount of hardware to get started with.
-  More setup will be required of the bootloader needs to be run
-  (instead of jumping right into the sketch).
+Configures minimum amount of hardware to get started with.
+More setup will be required of the bootloader needs to be run
+(instead of jumping right into the sketch).
 */
 static void SetupMinimalHardware(void)
 {
@@ -435,29 +452,9 @@ static void SetupMinimalHardware(void)
 
     wdt_disable(); // we don't use the watchdog timer for anything here.
     //
-    // Setup the proper MCU clock rate. 
+    // Setup the proper MCU clock rate (defined in Katiana.h)
     //
-#if   F_USB == (F_CPU << 8)
-    clock_prescale_set(clock_div_256);
-#elif F_USB == (F_CPU << 7)
-    clock_prescale_set(clock_div_128);
-#elif F_USB == (F_CPU << 6)
-    clock_prescale_set(clock_div_64);
-#elif F_USB == (F_CPU << 5)
-    clock_prescale_set(clock_div_32);
-#elif F_USB == (F_CPU << 4)
-    clock_prescale_set(clock_div_16);
-#elif F_USB == (F_CPU << 3)
-    clock_prescale_set(clock_div_8);
-#elif F_USB == (F_CPU << 2)
-    clock_prescale_set(clock_div_4);
-#elif F_USB == (F_CPU << 1)
-    clock_prescale_set(clock_div_2);
-#elif
-    clock_prescale_set(clock_div_1);
-#else
-#error Invalid clock frequencies: (F_USB / F_CPU) must be an integer power of two betwen 1 and 256.
-#endif
+    clock_prescale_set( SYSTEM_CLOCK_PRESCALE );
 }
 
 /**
@@ -470,11 +467,11 @@ static void SetupNormalHardware()
     MCUCR = (1 << IVCE);
     MCUCR = (1 << IVSEL);
     /*
-       Not sure if this is necessary? 
-       Does the USB host always set line encoding before reading it? If so, this is not required.
-       Being static, cdcPortSettings has already been zeroed during init and that is the proper init
-       value for all fields except for DataBits. By setting only DataBits here compared to doing
-       it in the declaration saves two bytes of flash.
+    Not sure if this is necessary? 
+    Does the USB host always set line encoding before reading it? If so, this is not required.
+    Being static, cdcPortSettings has already been zeroed during init and that is the proper init
+    value for all fields except for DataBits. By setting only DataBits here compared to doing
+    it in the declaration saves two bytes of flash.
     */
     cdcPortSettings.DataBits = 8;
     USB_Init();
@@ -485,40 +482,47 @@ static void SetupNormalHardware()
     // It will count up to the value in OCR1A then reset back to zero again, generating
     // a compare match interrupt with every cycle.
     //
-    OCR1A = TICK_COUNT_25HZ;		    // compare match value which generates 25Hz interrupt rate
-    TIMSK1 = _BV(OCIE1A);		    // enable timer 1 output compare A match interrupt
+    OCR1A = TICK_COUNT_25HZ;		        // compare match value which generates 25Hz interrupt rate
+    TIMSK1 = _BV(OCIE1A);		            // enable timer 1 output compare A match interrupt
     TCCR1B = TCCR1B_CS_25HZ | _BV(WGM12);   // setup the prescaler and CTC mode.
-    // TCNT1 = 0;			    // After MCU reset, TCNT1 is cleared; no need do that here.
+    // TCNT1 = 0;			                // After MCU reset, TCNT1 is cleared; no need do that here.
 
 }
 
 /** 
-  Timer 1 is configured to fire this compare match ISR at a 25Hz rate (40ms per compare match)
-  As such, it is possible to generate timeouts up to 10 seconds with only 8-bit timeout counters.
-  This is also used to make those blinky LEDs work if that function is eabled.
+Timer 1 is configured to fire this compare match ISR at a 25Hz rate (40ms per compare match)
+As such, it is possible to generate timeouts up to 10 seconds with only 8-bit timeout counters.
+This is also used to make those blinky LEDs work if that function is eabled.
 */
 ISR(TIMER1_COMPA_vect, ISR_BLOCK)
 {
-    if (sketchPresent && Timeout) Timeout--;
+    if (sketchPresent && timeout) timeout--;
 
-#if defined(ENABLE_LED_SUPPORT) && (LED_START_FLASHES > 0)
+#if (LED_START_FLASHES > 0)
     if (ledFlashCount)
     {	
-	ledFlashCount--;
-	LEDs_L_Toggle();
+        ledFlashCount--;
+        //
+        // toggle LED on every 4th timer tick, which effectively divides
+        // the 25Hz timer rate by eight, for a 3.125Hz flash rate.
+        //
+        if ((ledFlashCount & 0x03) == 0)
+        {
+            LEDs_L_Toggle();
+        }
     }
 #endif
 }
 
 /** 
- Event handler for the USB_ConfigurationChanged event. This configures the device's endpoints ready
- to relay data to and from the attached USB host.
+Event handler for the USB_ConfigurationChanged event. This configures the device's endpoints ready
+to relay data to and from the attached USB host.
 */
 void EVENT_USB_Device_ConfigurationChanged(void)
 {
     /* Setup CDC Notification, Rx and Tx Endpoints */
     Endpoint_ConfigureEndpoint(CDC_NOTIFICATION_EPADDR, EP_TYPE_INTERRUPT,
-	CDC_NOTIFICATION_EPSIZE, 1);
+        CDC_NOTIFICATION_EPSIZE, 1);
 
     Endpoint_ConfigureEndpoint(CDC_TX_EPADDR, EP_TYPE_BULK, CDC_TXRX_EPSIZE, 1);
 
@@ -526,17 +530,17 @@ void EVENT_USB_Device_ConfigurationChanged(void)
 }
 
 /** 
- Event handler for the USB_ControlRequest event. This is used to catch and process control requests sent to
- the device from the USB host before passing along unhandled control requests to the library for processing
- internally.
+Event handler for the USB_ControlRequest event. This is used to catch and process control requests sent to
+the device from the USB host before passing along unhandled control requests to the library for processing
+internally.
 */
 void EVENT_USB_Device_ControlRequest(void)
 {
     /* Ignore any requests that aren't directed to the CDC interface */
     if ((USB_ControlRequest.bmRequestType & (CONTROL_REQTYPE_TYPE | CONTROL_REQTYPE_RECIPIENT)) !=
-	(REQTYPE_CLASS | REQREC_INTERFACE))
+        (REQTYPE_CLASS | REQREC_INTERFACE))
     {
-	return;
+        return;
     }
 
     /* Activity - toggle indicator LEDs */
@@ -547,49 +551,49 @@ void EVENT_USB_Device_ControlRequest(void)
     switch (USB_ControlRequest.bRequest)
     {
     case CDC_REQ_GetLineEncoding:
-	if (USB_ControlRequest.bmRequestType == (REQDIR_DEVICETOHOST | REQTYPE_CLASS | REQREC_INTERFACE))
-	{
-	    Endpoint_ClearSETUP();
+        if (USB_ControlRequest.bmRequestType == (REQDIR_DEVICETOHOST | REQTYPE_CLASS | REQREC_INTERFACE))
+        {
+            Endpoint_ClearSETUP();
 
-	    /* Write the line coding data to the control endpoint */
-	    Endpoint_Write_Control_Stream_LE(&cdcPortSettings, sizeof(CDC_LineEncoding_t));
-	    Endpoint_ClearOUT();
-	}
+            /* Write the line coding data to the control endpoint */
+            Endpoint_Write_Control_Stream_LE(&cdcPortSettings, sizeof(CDC_LineEncoding_t));
+            Endpoint_ClearOUT();
+        }
 
-	break;
+        break;
     case CDC_REQ_SetLineEncoding:
-	if (USB_ControlRequest.bmRequestType == (REQDIR_HOSTTODEVICE | REQTYPE_CLASS | REQREC_INTERFACE))
-	{
-	    Endpoint_ClearSETUP();
+        if (USB_ControlRequest.bmRequestType == (REQDIR_HOSTTODEVICE | REQTYPE_CLASS | REQREC_INTERFACE))
+        {
+            Endpoint_ClearSETUP();
 
-	    /* Read the line coding data in from the host into the global struct */
-	    Endpoint_Read_Control_Stream_LE(&cdcPortSettings, sizeof(CDC_LineEncoding_t));
-	    Endpoint_ClearIN();
-	}
+            /* Read the line coding data in from the host into the global struct */
+            Endpoint_Read_Control_Stream_LE(&cdcPortSettings, sizeof(CDC_LineEncoding_t));
+            Endpoint_ClearIN();
+        }
 
-	break;
+        break;
     case CDC_REQ_SetControlLineState:
-	if (USB_ControlRequest.bmRequestType == (REQDIR_HOSTTODEVICE | REQTYPE_CLASS | REQREC_INTERFACE))
-	{
-	    Endpoint_ClearSETUP();
-	    Endpoint_ClearStatusStage();
-	}
+        if (USB_ControlRequest.bmRequestType == (REQDIR_HOSTTODEVICE | REQTYPE_CLASS | REQREC_INTERFACE))
+        {
+            Endpoint_ClearSETUP();
+            Endpoint_ClearStatusStage();
+        }
 
-	break;
+        break;
     }
 }
 
 /**
-  This function performs a safe SPM sequence, in the order listed below.
-  It cannot be used for the boot page fill operation.
- 
-  - Disable global interrupts
-  - Write SpmcsrValue so SPMCSR/SPMCR
-  - Execute SPM instruction
-  - Enable global interrupts
-  - Busy-wait for the SPM operation to complete
+This function performs a safe SPM sequence, in the order listed below.
+It cannot be used for the boot page fill operation.
 
-  \param[in] SpmcsrValue is the value to be loaded into the SPMCSR/SPMCR register.
+- Disable global interrupts
+- Write SpmcsrValue so SPMCSR/SPMCR
+- Execute SPM instruction
+- Enable global interrupts
+- Busy-wait for the SPM operation to complete
+
+\param[in] SpmcsrValue is the value to be loaded into the SPMCSR/SPMCR register.
 */
 static void ExecuteSPM( uint8_t SpmcsrValue )
 {
@@ -600,53 +604,57 @@ static void ExecuteSPM( uint8_t SpmcsrValue )
 }
 
 /**
- Increments the AVR910 address by one, Avr910ByteAddress by two,
- and updates RAMPZ if the byte address overflows.
+Increments the AVR910 address by one, Avr910ByteAddress by two,
+and updates RAMPZ if the byte address overflows.
 
- \see Side effects: avr910Address, avrByteAddress; RAMPZ may be modified.
+\see Side effects: avr910Address, flashByteAddress; RAMPZ may be modified.
 */
 static void IncrementAddress(void)
 {
-    avrByteAddress += 2;
     avr910Address++;
+    flashByteAddress = avr910Address << 1; // += 2; Left shift is 8 bytes less code space
 #if defined(RAMPZ)
     //
     // if byte address rolled over to 0 or 1, then set the RAMPZ lsb.
     // this makes things work correctly for parts with 128kB of flash.
     //
-    if ((avrByteAddress & 0xFFFEu) == 0) RAMPZ = 0x01;
+    if ((flashByteAddress & 0xFFFEu) == 0) RAMPZ = 0x01;
 #endif
 }
 
 /** 
-  Some AVR-910 command responses are kept only in flash and this function
-  copies them out to the USB host using CdcSendByte().
+Some AVR-910 command responses are kept only in flash and this function
+copies them out to the USB host using CdcSendByte().
 
-  \param[in] Response is an array of bytes in PROGMEM to be sent to the USB host.
-  \param[in] Count is the number of bytes to be sent.
-  \see CdcSendByte
+\param[in] Response is an array of bytes in PROGMEM to be sent to the USB host.
+\param[in] Count is the number of bytes to be sent.
+\see CdcSendByte
 */
 static void WriteProgmemArray(uint8_t *Response, uint8_t Count)
 {
     for (uint8_t k=0; k<Count; k++)
     {
-	CdcSendByte( pgm_read_byte_near( Response++ ) );
+        CdcSendByte( pgm_read_byte_near( Response++ ) );
     }
 }
 
 #if defined(ENABLE_SECURITY_CHECKS) || defined(__DOXYGEN__)
 
 /** 
-  Checks whether the flash memory block running from avr910Address to 
-  (avr910Address + (BlockSize >> 1)) represents a valid section of flash memory.
+Checks whether the flash memory block running from avr910Address to 
+(avr910Address + (BlockSize >> 1)) represents a valid section of flash memory.
 
-  \param[in] BlockSize is the number of bytes in the proposed data block to be checked.
-  \return Returns non-zero if the block is valid.
-  \see Side effects: [in] avr910Address
+\param[in] BlockSize is the number of bytes in the proposed data block to be checked.
+\return Returns non-zero if the block is valid.
+\see Side effects: [in] avr910Address
 */
 static uint8_t ValidateFlashBlock(uint16_t BlockSize)
 {
-    if (BlockSize > SPM_PAGESIZE) return 0;
+    //
+    // ================ WARNING WARNING WARNING =====================
+    // SPM_PAGESIZE is BYTES -- not words as Atmel some datasheets might have you beleive
+    //
+    if (BlockSize > (uint16_t)(SPM_PAGESIZE)) return 0;
     uint16_t blockWords = (BlockSize + 1u) >> 1;
     uint16_t endWordAddr = avr910Address + blockWords - 1u;
     if (endWordAddr < avr910Address) return 0;    // overflow not allowed
@@ -664,14 +672,14 @@ static uint8_t ValidateFlashBlock(uint16_t BlockSize)
 }
 
 /** 
-  Checks whether the EEPROM memory block running from avr910Address to (avr910Address + (BlockSize >> 1))
-  represents a valid section of EEPROM memory. We have no restrictions on block size here because
-  each EEPROM byte must be individually read/written. In this situation, avr910Address is
-  the BYTE address in EEPROM to be checked. BlockSize is still in bytes.
-  
-  \param[in] BlockSize is the number of bytes in the proposed data block to be checked.
-  \return Returns non-zero if the block is valid.
-  \see Side effects: [in] avr910Address
+Checks whether the EEPROM memory block running from avr910Address to (avr910Address + (BlockSize >> 1))
+represents a valid section of EEPROM memory. We have no restrictions on block size here because
+each EEPROM byte must be individually read/written. In this situation, avr910Address is
+the BYTE address in EEPROM to be checked. BlockSize is still in bytes.
+
+\param[in] BlockSize is the number of bytes in the proposed data block to be checked.
+\return Returns non-zero if the block is valid.
+\see Side effects: [in] avr910Address
 */
 static uint8_t ValidateEepromBlock(uint16_t BlockSize)
 {
@@ -686,11 +694,11 @@ static uint8_t ValidateEepromBlock(uint16_t BlockSize)
 
 #if defined(ENABLE_BLOCK_SUPPORT) || defined(__DOXYGEN__)
 /** 
-  Reads or writes a block of EEPROM or FLASH memory to or from the appropriate CDC data endpoint, depending
-  on the AVR109 protocol command issued.
+Reads or writes a block of EEPROM or FLASH memory to or from the appropriate CDC data endpoint, depending
+on the AVR109 protocol command issued.
 
-  \param[in] Command  Single character AVR109 protocol command indicating what memory operation to perform
-  \see Side effects: [in,out] avr910Address, [in,out] avrByteAddress, [in,out] <tt>RAMPZ</tt>.
+\param[in] Command  Single character AVR109 protocol command indicating what memory operation to perform
+\see Side effects: [in,out] avr910Address, [in,out] flashByteAddress, [in,out] <tt>RAMPZ</tt>.
 */
 static void ReadWriteMemoryBlock(const uint8_t Command)
 {
@@ -705,126 +713,124 @@ static void ReadWriteMemoryBlock(const uint8_t Command)
 
     if ( (! isFlash) && (MemoryType != MEMORY_TYPE_EEPROM))
     {
-	/* Send error byte back to the host */
-	CdcSendByte('?');
-	return;
+        /* Send error byte back to the host */
+        CdcSendByte('?');
+        return;
     }
 
     uint8_t valid = isFlash ? ValidateFlashBlock(BlockSize) : ValidateEepromBlock(BlockSize);
 
-    uint16_t PageStartAddress = avrByteAddress;
+    uint16_t blockStartAddress = flashByteAddress;
 
     uint8_t isRead = Command == AVR109_COMMAND_BlockRead;
 
     if (valid)
     {
-	if (!isRead)
-	{
-	    if (isFlash) 
-	    {
-		__asm__ __volatile__ (		    \
-		    "movw r30,%0\n"			    \
-		    :				    \
-		    : "r"((uint16_t)PageStartAddress)   \
-		    );
-		ExecuteSPM( __BOOT_PAGE_ERASE );
-	    }
-	}
+        if (!isRead)
+        {
+            if (isFlash) 
+            {
+                __asm__ __volatile__ (		    \
+                    "movw r30,%0\n"			    \
+                    :				    \
+                    : "r"((uint16_t)blockStartAddress)   \
+                    );
+                ExecuteSPM( __BOOT_PAGE_ERASE );
+            }
+        }
     }
 
     while (BlockSize--)
     {
-	if (isRead)
-	{
-	    if (isFlash)
-	    {
-		uint16_t w = valid ? pgm_read_word( avrByteAddress ) : 0xffffu;
-		CdcSendByte(w & 0xffu);
-		CdcSendByte(w >> 8);
-		BlockSize--;
-	    }
-	    else
-	    {
-		CdcSendByte(valid ? eeprom_read_byte((uint8_t*)(intptr_t)avr910Address) : 0xffu);
-	    }
-	}
-	else
-	{
-	    if (isFlash)
-	    {
-		word[0] = CdcReceiveByte();
-		word[1] = CdcReceiveByte();
-		if (valid)
-		{
-		    // 
-		    // boot_page_fill automatically enables the RWW section, so we don't
-		    // need to clear that state from the page erase operation.
-		    //
-		    cli();
-		    boot_page_fill(avrByteAddress, *(uint16_t*)word);
-		    sei();
-		}
+        if (isRead)
+        {
+            if (isFlash)
+            {
+                uint16_t w = valid ? pgm_read_word( flashByteAddress ) : 0xffffu;
+                CdcSendByte(w & 0xffu);
+                CdcSendByte(w >> 8);
+                BlockSize--;
+            }
+            else
+            {
+                CdcSendByte(valid ? eeprom_read_byte((uint8_t*)(intptr_t)avr910Address) : 0xffu);
+            }
+        }
+        else
+        {
+            if (isFlash)
+            {
+                word[0] = CdcReceiveByte();
+                word[1] = CdcReceiveByte();
+                if (valid)
+                {
+                    // 
+                    // boot_page_fill automatically enables the RWW section, so we don't
+                    // need to clear that state from the page erase operation.
+                    //
+                    cli();
+                    boot_page_fill(flashByteAddress, *(uint16_t*)word);
+                    sei();
+                }
 
-		BlockSize--;
-	    }
-	    else
-	    {
-		if (valid)
-		{
-		    cli();
-		    eeprom_update_byte((uint8_t*)((intptr_t)avr910Address), CdcReceiveByte());
-		    sei();
-		}
-	    }
-	}
-	IncrementAddress();
+                BlockSize--;
+            }
+            else
+            {
+                if (valid)
+                {
+                    cli();
+                    eeprom_update_byte((uint8_t*)((intptr_t)avr910Address), CdcReceiveByte());
+                    sei();
+                }
+            }
+        }
+        IncrementAddress();
     }
 
     if (! isRead)
     {
-	//
-	// If in FLASH programming mode, commit the page after writing
-	// If we wrote page zero, then we can now claim there's a sketch present.
-	// Technically, if they wrote all 0xFF's to the page we'd be wrong.
-	// We COULD detect that by noting what the data was at address zero in the 
-	// loop above, but this takes more code and probably never happens.
-	//
-	if ( valid )
-	{
-	    if ( isFlash )
-	    {
-		ExecuteSPM( __BOOT_PAGE_WRITE );
-		BootRwwEnable();
-		if (PageStartAddress == 0) sketchPresent = 1;
-	    }
-	    else
-	    {
-		//
-		// don't leave this function until eeprom operations are complete.
-		// other parts of the code depend on this already having been done.
-		//
-		eeprom_busy_wait();
-	    }
-	}
+        //
+        // If in FLASH programming mode, commit the page after writing
+        // If we wrote page zero, then we can now claim there's a sketch present.
+        // Technically, if they wrote all 0xFF's to the page we'd be wrong.
+        // We COULD detect that by noting what the data was at address zero in the 
+        // loop above, but this takes more code and probably never happens.
+        //
+        if ( valid )
+        {
+            if ( isFlash )
+            {
+                ExecuteSPM( __BOOT_PAGE_WRITE );
+                BootRwwEnable();
+                if (blockStartAddress == 0) sketchPresent = 1;
+            }
+            else
+            {
+                //
+                // don't leave this function until eeprom operations are complete.
+                // other parts of the code depend on this already having been done.
+                //
+                eeprom_busy_wait();
+            }
+        }
 
-	/* Send response byte back to the host */
-	CdcSendByte('\r');
+        /* Send response byte back to the host */
+        CdcSendByte('\r');
     }
     //
     // every time we receive flash read/write block command, restart the 8-second timeout period.
     //
-    cli();
-    Timeout = TIMEOUT_PERIOD;
-    sei();
+    SetTimeout( TIMEOUT_PERIOD );
 }
 
 #endif
 
 /** 
-  Retrieves the next byte from the host in the CDC data OUT endpoint, and clears the endpoint bank if needed
-  to allow reception of the next data packet from the host.
+Retrieves the next byte from the host in the CDC data OUT endpoint, and clears the endpoint bank if needed
+to allow reception of the next data packet from the host.
 
-  \return Next received byte from the host in the CDC data OUT endpoint
+\return Next received byte from the host in the CDC data OUT endpoint
 */
 static uint8_t CdcReceiveByte(void)
 {
@@ -834,13 +840,13 @@ static uint8_t CdcReceiveByte(void)
     /* If OUT endpoint empty, clear it and wait for the next packet from the host */
     while (!(Endpoint_IsReadWriteAllowed()))
     {
-	Endpoint_ClearOUT();
+        Endpoint_ClearOUT();
 
-	while (!(Endpoint_IsOUTReceived()))
-	{
-	    if (USB_DeviceState == DEVICE_STATE_Unattached)
-		return 0;
-	}
+        while (!(Endpoint_IsOUTReceived()))
+        {
+            if (USB_DeviceState == DEVICE_STATE_Unattached)
+                return 0;
+        }
     }
 
     LEDs_RX_Toggle();
@@ -850,10 +856,10 @@ static uint8_t CdcReceiveByte(void)
 }
 
 /** 
-  Writes a byte to the CDC data IN endpoint, and sends the endpoint back if needed to free up the
-  bank when full ready for the next byte in the packet to the host.
+Writes a byte to the CDC data IN endpoint, and sends the endpoint back if needed to free up the
+bank when full ready for the next byte in the packet to the host.
 
-  \param[in] Data: data byte to send to the USB host
+\param[in] Data: data byte to send to the USB host
 */
 static void CdcSendByte(const uint8_t Data)
 {
@@ -863,13 +869,13 @@ static void CdcSendByte(const uint8_t Data)
     /* If IN endpoint full, clear it and wait until ready for the next packet to the host */
     if (!(Endpoint_IsReadWriteAllowed()))
     {
-	Endpoint_ClearIN();
+        Endpoint_ClearIN();
 
-	while (!(Endpoint_IsINReady()))
-	{
-	    if (USB_DeviceState == DEVICE_STATE_Unattached)
-		return;
-	}
+        while (!(Endpoint_IsINReady()))
+        {
+            if (USB_DeviceState == DEVICE_STATE_Unattached)
+                return;
+        }
     }
 
     LEDs_TX_Toggle();
@@ -879,9 +885,9 @@ static void CdcSendByte(const uint8_t Data)
 }
 
 /** 
-  Reads in a single AVR109 command from the CDC data OUT endpoint (if there's one available).
-  It will then process that command, and perform the required actions, sending the appropriate response back 
-  to the host.
+Reads in a single AVR109 command from the CDC data OUT endpoint (if there's one available).
+It will then process that command, and perform the required actions, sending the appropriate response back 
+to the host.
 */
 static void ProcessAVR910Command(void)
 {
@@ -890,153 +896,180 @@ static void ProcessAVR910Command(void)
 
     /* Check if endpoint has a command in it sent from the host */
     if (!(Endpoint_IsOUTReceived()))
-	return;
+        return;
 
     /* Read in the bootloader command (first byte sent from host) */
     uint8_t Command = CdcReceiveByte();
 
     if (Command == AVR109_COMMAND_ExitBootloader)
     {
-	//
-	// force the bootloader to stop accepting input in a short time (e.g. 500ms)
-	// and jump into the sketch (if there is one).
-	//
-	cli();
-	Timeout = SHORT_TIMEOUT_PERIOD;
-	sei();
+        //
+        // force the bootloader to stop accepting input in a short time (e.g. 500ms)
+        // and jump into the sketch (if there is one).
+        //
+        SetTimeout( SHORT_TIMEOUT_PERIOD );
 
-	/* Send confirmation byte back to the host */
-	CdcSendByte('\r');
+        /* Send confirmation byte back to the host */
+        CdcSendByte('\r');
     }
     else if ((Command == AVR109_COMMAND_SetLED) || (Command == AVR109_COMMAND_ClearLED) ||
-	(Command == AVR109_COMMAND_SelectDeviceType))
+        (Command == AVR109_COMMAND_SelectDeviceType))
     {
-	CdcReceiveByte();
+        CdcReceiveByte();
 
-	/* Send confirmation byte back to the host */
-	CdcSendByte('\r');
+        /* Send confirmation byte back to the host */
+        CdcSendByte('\r');
     }
     else if ((Command == AVR109_COMMAND_EnterProgrammingMode) || (Command == AVR109_COMMAND_LeaveProgrammingMode))
     {
-	/* Send confirmation byte back to the host */
-	CdcSendByte('\r');
+        /* Send confirmation byte back to the host */
+        CdcSendByte('\r');
     }
     else if (Command == AVR109_COMMAND_ReadPartCode)
     {
-	/* Return ATMEGA128 part code - this is only to allow AVRProg to use the bootloader */
-	CdcSendByte(0x91);	// for ATmega32
-	CdcSendByte(0x00);
+        /* Return ATMEGA128 part code - this is only to allow AVRProg to use the bootloader */
+        CdcSendByte(0x91);	// for ATmega32
+        CdcSendByte(0x00);
     }
     else if (Command == AVR109_COMMAND_ReadAutoAddressIncrement)
     {
-	/* Indicate auto-address increment is supported */
-	CdcSendByte('Y');
+        /* Indicate auto-address increment is supported */
+        CdcSendByte('Y');
     }
     else if (Command == AVR109_COMMAND_SetCurrentAddress)
     {
-	//
-	// Set the current address to that given by the host.
-	// We keep two 16-bit versions of this address -- a byte address and a word address.
-	// The word address works with flash sizes up to 128kB. So does the byte address but
-	// with some caveats. We set RAMPZ (if it exists) based on the msb of the word address,
-	// and that takes care of overflows that occur if the word address >= 0x8000.
-	//
-	// There's one other place where this requires special consideration however, and that'
-	// when auto-increment on the word address goes from 0x7fff to 0x8000 and the byte
-	// address goes from 0xffff to 0x0000 -- when that happens we must set the lsb in RAMPZ.
-	// In the case of some boot clients this issue may not come up -- they may send a set address
-	// command prior to every block upload of a page.
-	//
-	uint8_t highByte = CdcReceiveByte();
-	avr910AddressMsb = highByte;
-	avr910AddressLsb = CdcReceiveByte();
+        //
+        // Set the current address to that given by the host.
+        //
+        // ***** Interpretation of this address depends on the memory being referenced *****
+        // ***** Flash:  this is a WORD address
+        // ***** EEPROM: this is a BYTE address
+        //
+        // For flash programming, some special care is required with this address.
+        // We keep two 16-bit versions of this address -- the original one plus (original << 1).
+        // The original address works with flash sizes up to 128kB. 
+        // So does the (original << 1), but with some caveats. 
+        // We must set RAMPZ (if it exists) based on the msb of the original address,
+        // and that takes care of overflows that occur if the word address >= 0x8000.
+        //
+        // There's one other place where this requires special consideration however, and that'
+        // when auto-increment on the word address goes from 0x7fff to 0x8000 and the byte
+        // address goes from 0xffff to 0x0000 -- when that happens we must set the lsb in RAMPZ.
+        // In the case of some boot clients this issue may not come up -- they may send a set address
+        // command prior to every block upload of a page.
+        //
+        uint8_t highByte = CdcReceiveByte();
+        avr910AddressMsb = highByte;
+        avr910AddressLsb = CdcReceiveByte();
 #ifdef RAMPZ
-	RAMPZ = (highByte & 0x80) ? 1 : 0;
+        RAMPZ = (highByte & 0x80) ? 1 : 0;
 #endif
-	avrByteAddress = avr910Address << 1;
-	/* Send confirmation byte back to the host */
-	CdcSendByte('\r');
+        flashByteAddress = avr910Address << 1;
+        /* Send confirmation byte back to the host */
+        CdcSendByte('\r');
     }
     else if (Command == AVR109_COMMAND_ReadBootloaderInterface)
     {
-	/* Indicate serial programmer back to the host */
-	CdcSendByte('S');
+        /* Indicate serial programmer back to the host */
+        CdcSendByte('S');
     }
     else if (Command == AVR109_COMMAND_ReadBootloaderIdentifier)
     {
-	WriteProgmemArray( softwareIdentifier, 7 );
-	/* Write the 7-byte software identifier to the endpoint */
-	//for (uint8_t CurrByte = 0; CurrByte < 7; CurrByte++)
-	//    CdcSendByte(SOFTWARE_IDENTIFIER[CurrByte]);
+        /* Write the 7-byte software identifier to the endpoint */
+        WriteProgmemArray( softwareIdentifier, 7 );
     }
     else if (Command == AVR109_COMMAND_ReadBootloaderSWVersion)
     {
-	CdcSendByte('0' + BOOTLOADER_VERSION_MAJOR);
-	CdcSendByte('0' + BOOTLOADER_VERSION_MINOR);
+        CdcSendByte('0' + BOOTLOADER_VERSION_MAJOR);
+        CdcSendByte('0' + BOOTLOADER_VERSION_MINOR);
     }
     else if (Command == AVR109_COMMAND_ReadSignature)
     {
-	WriteProgmemArray( avrSignature, 3 );
+        WriteProgmemArray( avrSignature, 3 );
     }
+#if defined(ENABLE_FLASH_ERASE_SUPPORT)
     else if (Command == AVR109_COMMAND_EraseFLASH)
     {
-	/* Clear the application section of flash */
-	for (uint32_t CurrFlashAddress = 0; CurrFlashAddress < (uint32_t)BOOT_START_ADDR; CurrFlashAddress += SPM_PAGESIZE)
-	{
-	    __asm__ __volatile__ (		    \
-		"movw r30,%0\n"			    \
-		:				    \
-		: "r"((uint16_t)CurrFlashAddress)   \
-		);
-	    ExecuteSPM( __BOOT_PAGE_ERASE );
-	}
+        //
+        // Clear the application section of flash. The AVR910 command is actually supposed
+        // to erase the entire chip ... ??? not sure if that's correct, but we only 
+        // erase the flash in this bootloader.
+        //
+        // There are two versions of this -- one for parts with 64kB or less of flash, 
+        // and another for parts with 128kB. We don't support more than 128kB of flash.
+        //
+#if (BOOT_START_ADDR < 0xFFFF)
+		for (uint16_t addr = 0; addr < (uint32_t)BOOT_START_ADDR; addr += SPM_PAGESIZE)
+		{
+            cli();
+			boot_page_erase(addr);
+            sei();
+			boot_spm_busy_wait();
+		}
+#else
+        RAMPZ = 0;
+        for (uint16_t wordAddr = 0; wordAddr < (uint16_t)(BOOT_START_ADDR >> 1); wordAddr += (SPM_PAGESIZE >> 1))
+        {
+            if (wordAddr & 0x8000u) RAMPZ = 1;
 
-	BootRwwEnable();
-	//cli(); boot_rww_enable(); sei();
+            __asm__ __volatile__ (		    \
+                "movw r30,%0\n"			    \
+                :				    \
+                : "r"(wordAddr << 1)   \
+                );
+            ExecuteSPM( __BOOT_PAGE_ERASE );
+        }
+#endif
 
-	/* Send confirmation byte back to the host */
-	CdcSendByte('\r');
+        BootRwwEnable();
+
+        /* Send confirmation byte back to the host */
+        CdcSendByte('\r');
     }
+#endif
 #if defined(ENABLE_LOCK_BYTE_WRITE_SUPPORT)
     else if (Command == AVR109_COMMAND_WriteLockbits)
     {
-	/* Set the lock bits to those given by the host */
-	cli();
-	boot_lock_bits_set(CdcReceiveByte());
-	sei();
+        /* Set the lock bits to those given by the host */
+        cli();
+        boot_lock_bits_set(CdcReceiveByte());
+        sei();
 
-	/* Send confirmation byte back to the host */
-	CdcSendByte('\r');
+        /* Send confirmation byte back to the host */
+        CdcSendByte('\r');
     }
 #endif
     else if (Command == AVR109_COMMAND_ReadLockbits)
     {
-	CdcSendByte(boot_lock_fuse_bits_get(GET_LOCK_BITS));
+        CdcSendByte(boot_lock_fuse_bits_get(GET_LOCK_BITS));
     }
     else if (Command == AVR109_COMMAND_ReadLowFuses)
     {
-	CdcSendByte(boot_lock_fuse_bits_get(GET_LOW_FUSE_BITS));
+        CdcSendByte(boot_lock_fuse_bits_get(GET_LOW_FUSE_BITS));
     }
     else if (Command == AVR109_COMMAND_ReadHighFuses)
     {
-	CdcSendByte(boot_lock_fuse_bits_get(GET_HIGH_FUSE_BITS));
+        CdcSendByte(boot_lock_fuse_bits_get(GET_HIGH_FUSE_BITS));
     }
     else if (Command == AVR109_COMMAND_ReadExtendedFuses)
     {
-	CdcSendByte(boot_lock_fuse_bits_get(GET_EXTENDED_FUSE_BITS));
+        CdcSendByte(boot_lock_fuse_bits_get(GET_EXTENDED_FUSE_BITS));
     }
 #if defined(ENABLE_BLOCK_SUPPORT)
     else if (Command == AVR109_COMMAND_GetBlockWriteSupport)
     {
-	CdcSendByte('Y');
-
-	/* Send block size to the host */
-	CdcSendByte(SPM_PAGESIZE >> 8);
-	CdcSendByte(SPM_PAGESIZE & 0xFF);
+        CdcSendByte('Y');
+        //
+        // Send block size in BYTES to the host 
+        // ================ WARNING WARNING WARNING =====================
+        // SPM_PAGESIZE is BYTES -- not words as Atmel some datasheets might have you beleive
+        //
+        CdcSendByte(SPM_PAGESIZE >> 8);
+        CdcSendByte((SPM_PAGESIZE) & 0xFF);
     }
     else if ((Command == AVR109_COMMAND_BlockWrite) || (Command == AVR109_COMMAND_BlockRead))
     {
-	ReadWriteMemoryBlock(Command);
+        ReadWriteMemoryBlock(Command);
     }
 #endif
 #if defined(ENABLE_FLASH_BYTE_SUPPORT)
@@ -1050,78 +1083,78 @@ static void ProcessAVR910Command(void)
     //
     else if (Command == AVR109_COMMAND_FillFlashPageWordHigh)
     {
-	/* Write the high byte to the current flash page */
-	flashByteBuffer[1] = CdcReceiveByte();
+        /* Write the high byte to the current flash page */
+        flashByteBuffer[1] = CdcReceiveByte();
 
-	/* Send confirmation byte back to the host */
-	CdcSendByte('\r');
+        /* Send confirmation byte back to the host */
+        CdcSendByte('\r');
     }
     else if (Command == AVR109_COMMAND_FillFlashPageWordLow)
     {
-	uint16_t w;
-	/* Write the low byte to the current flash page */
-	flashByteBuffer[0] = CdcReceiveByte();
-	w = *flashWordBuffer;
+        uint16_t w;
+        /* Write the low byte to the current flash page */
+        flashByteBuffer[0] = CdcReceiveByte();
+        w = *flashWordBuffer;
 
-	if (ValidateFlashBlock(2))
-	{
-	    cli();
-	    boot_page_fill( avrByteAddress, w );
-	    sei();
-	}
-	IncrementAddress();
-	/* Send confirmation byte back to the host */
-	CdcSendByte('\r');
+        if (ValidateFlashBlock(2))
+        {
+            cli();
+            boot_page_fill( flashByteAddress, w );
+            sei();
+        }
+        IncrementAddress();
+        /* Send confirmation byte back to the host */
+        CdcSendByte('\r');
     }
     else if (Command == AVR109_COMMAND_WriteFlashPage)
     {
-	// this may be wrong too...what's the procedure w/no temp buffer???
-	// what about security checks?
-	/* Commit the flash page to memory */
-	ExecuteSPM( __BOOT_PAGE_WRITE );
-	BootRwwEnable();
+        // this may be wrong too...what's the procedure w/no temp buffer???
+        // what about security checks?
+        /* Commit the flash page to memory */
+        ExecuteSPM( __BOOT_PAGE_WRITE );
+        BootRwwEnable();
 
-	/* Send confirmation byte back to the host */
-	CdcSendByte('\r');
+        /* Send confirmation byte back to the host */
+        CdcSendByte('\r');
     }
     else if (Command == AVR109_COMMAND_ReadFLASHWord)
     {	
-	uint16_t ProgramWord = ValidateFlashBlock(2) ? pgm_read_word(avrByteAddress) : 0xffffu;
+        uint16_t ProgramWord = ValidateFlashBlock(2) ? pgm_read_word(flashByteAddress) : 0xffffu;
 
-	CdcSendByte(ProgramWord >> 8);
-	CdcSendByte(ProgramWord & 0xFF);
+        CdcSendByte(ProgramWord >> 8);
+        CdcSendByte(ProgramWord & 0xFF);
     }
 #endif
 #if defined(ENABLE_EEPROM_BYTE_SUPPORT)
     else if (Command == AVR109_COMMAND_WriteEEPROM)
     {
-	/* Read the byte from the endpoint and write it to the EEPROM */
-	uint8_t bite = CdcReceiveByte();
+        /* Read the byte from the endpoint and write it to the EEPROM */
+        uint8_t bite = CdcReceiveByte();
 
-	if (ValidateEepromBlock(1))
-	{
-	    cli();
-	    eeprom_update_byte((uint8_t*)((intptr_t)avr910Address), bite);
-	    sei();
-	    eeprom_busy_wait();
-	}
+        if (ValidateEepromBlock(1))
+        {
+            cli();
+            eeprom_update_byte((uint8_t*)((intptr_t)avr910Address), bite);
+            sei();
+            eeprom_busy_wait();
+        }
 
-	IncrementAddress();
+        IncrementAddress();
 
-	/* Send confirmation byte back to the host */
-	CdcSendByte('\r');
+        /* Send confirmation byte back to the host */
+        CdcSendByte('\r');
     }
     else if (Command == AVR109_COMMAND_ReadEEPROM)
     {
-	/* Read the EEPROM byte and write it to the endpoint */
-	CdcSendByte( ValidateEepromBlock(1) ? eeprom_read_byte((uint8_t*)((intptr_t)avr910Address)) : 0xffu );
-	IncrementAddress();
+        /* Read the EEPROM byte and write it to the endpoint */
+        CdcSendByte( ValidateEepromBlock(1) ? eeprom_read_byte((uint8_t*)((intptr_t)avr910Address)) : 0xffu );
+        IncrementAddress();
     }
 #endif
     else if (Command != AVR109_COMMAND_Sync)
     {
-	/* Unknown (non-sync) command, return fail code */
-	CdcSendByte('?');
+        /* Unknown (non-sync) command, return fail code */
+        CdcSendByte('?');
     }
 
     /* Select the IN endpoint */
@@ -1136,20 +1169,20 @@ static void ProcessAVR910Command(void)
     /* If a full endpoint's worth of data was sent, we need to send an empty packet afterwards to signal end of transfer */
     if (IsEndpointFull)
     {
-	while (!(Endpoint_IsINReady()))
-	{
-	    if (USB_DeviceState == DEVICE_STATE_Unattached)
-		return;
-	}
+        while (!(Endpoint_IsINReady()))
+        {
+            if (USB_DeviceState == DEVICE_STATE_Unattached)
+                return;
+        }
 
-	Endpoint_ClearIN();
+        Endpoint_ClearIN();
     }
 
     /* Wait until the data has been sent to the host */
     while (!(Endpoint_IsINReady()))
     {
-	if (USB_DeviceState == DEVICE_STATE_Unattached)
-	    return;
+        if (USB_DeviceState == DEVICE_STATE_Unattached)
+            return;
     }
 
     /* Select the OUT endpoint */

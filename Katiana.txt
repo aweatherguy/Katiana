@@ -8,56 +8,67 @@ documentation pages. It is not a project source file.
 
 \mainpage Katiana Bootloader for Arduino (version 2.1)
 
-<br />\section Sec_Description Project Description
 
-This bootloader enumerates on USB as a CDC Class device (virtual serial port).
-It implements a subset of the AVR109 protocol, allowing applications such as avrdude
-to program flash and EEPROM on the MCU. 
-It also provides startup logic for running Arduino sketches.
+<br/>\section Sec_Description Overview
 
-Out of the box this bootloader builds for the ATmega32U4 with a 4KB bootloader section size.
-Depending on options enabled, the build may exceed 4kB, but the options required for 
-compatibility with the Arduino IDE will fit a 4kB boot sector.
+Katiana is a bootloader for Atmel AVR microcontrollers with built-in USB peripherals, which:
 
-When the bootloader is running, the board's RX and TX LEDs can optionally 
-flash as data is being received from and sent to the CDC interface. 
-The "L" LED can also be configured to flash a fixed number of times at bootloader startup.
+- enumerates on USB as a CDC Class device (aka virtual serial port),
+- implements a subset of the AVR109 protocol, and
+- is compatible with the Arduino IDE for uploading and running sketches.
+
+Out of the box, it builds for the ATmega32U4 and fits into a 4KB bootloader section size.
+It should also be compatible with other Atmel AVR MCUs.
+
+<br />\section Sec_Why Why Another Bootloader?
+
+Katiana is a step in the evolution of the <em>Caterina</em> bootloader
+written by Dean Camera and distributed with his LUFA software library.
+Caterina was modified by Arduino for use as the bootloader on some of their boards
+incorporating MCUs with built-in USB hardware (such as Leonardo and LilyPad USB).
+The original boot logic was rewritten by the Arduino folks, but the rest
+of Caterina was little changed.
+
+Two main issues resulted in this author turning Caterina into Katiana:
+
+- There was no provision for system clock prescaling other than 1:1.
+- The bootloader does not enumerate on USB with a serial number.
 
 \subsection SSec_Updates Changes and Improvments
 
-The Katiana bootloader is a essentially new version of the original Catiana loader which is distributed
+The Katiana bootloader is based on the Catiana loader distributed
 with Arduino releases as late as 1.8.4 (and maybe later). 
-Here's a list of what's been updated:
+Here's a list of the more significant changes:
 
 <ul>
-<li>Support for system clock prescaling (other than 1:1).
-<li>Sketches can determine the cause of an MCU reset. 
-</li>
-<li>Custom USB serial numbers may be assigned to each physical board on which the bootloader
-  is installed. 
-</li>
-<li>Arduino IDE uploads can now program both flash and EEPROM.
-</li>
-<li>Address validation protects against accidental or malicious uploads which 
-  would corrupt the bootloader <br/>
-  (useful if BL1 lock bits are not set to protect boot sector).
-</li>
-<li>Communications between bootloader and sketch cannot be accidentally 
-  interfered with by the sketch.
-<li>Bootloader no longer executes erased flash when no sketch is present.</li>
+    <li>Updated to build with LUFA version 170418.
+    <li>Now supports system clock prescaling (other than 1:1).
+    <li>Sketches can determine the cause of an MCU reset. 
+    </li>
+    <li>Custom USB serial numbers may be assigned to each physical board on which the bootloader
+      is installed. 
+    </li>
+    <li>Sketches can get USB VID/PID from bootloader instead of boards.txt file.
+    </li>
+    <li>Optional address validation protects against uploads which would overwrite the bootloader. <br/>
+      <ul><li>Useful if BL1 lock bits are not set to protect boot sector.</li></ul>
+    </li>
+    <li>Communications between bootloader and sketch cannot be accidentally 
+      interfered with by the sketch.
+    <li>Bootloader no longer executes erased flash when no sketch is present.</li>
+    <li>Various changes to reduce compiled flash image size.
 </ul>
 
 <br/>\section Sec_Compat Compatibility
 
-This bootloader is specifically intended for the ATmega32U4 MCU as used on Arduino boards such as
-the Leonardo and LilyPad USB. It implements Arduino-specific behaviors and 
-supports uploads by the Arduino IDE.
+This bootloader was specifically developed for the ATmega32U4 MCU as used on Arduino boards such as
+the Leonardo and LilyPad USB. It implements Arduino-specific behaviors and supports uploads by the Arduino IDE.
 It will <em>probably</em> also work with other ATmega MCUs with built-in USB peripherals and 128kB
 or less of flash memory.
 
 Katiana responds to a subset of the Atmel AVR910 command protocol sufficient to support 
-uploads from the Arduino IDE (through avrdude) to work.
-Support for various AVR910 commands may be configured in the <tt>AppConfig.h</tt> file. 
+uploads from the Arduino IDE (through avrdude).
+Support for various subsets of AVR910 commands may be configured in the <tt>AppConfig.h</tt> file. 
 
 \subsection SSec_Info USB Interface Configuration
 
@@ -90,7 +101,7 @@ The bootloader configures the MCU's USB interface as follows:
 
 At startup, the bootloader executes a sequence of logical tests and delays as depicted in the
 flowchart below.
-Theis provides multiple paths by which to enter the bootloader while at the same time providing
+This provides two paths by which to enter the bootloader while at the same time providing
 the fastest possible sketch startup time when the bootloader is not required.
 
 From the point of view of a sketch, the bootloader <em>interferes</em> with
@@ -118,7 +129,8 @@ If there's no sketch, the bootloader begins accepting AVR910 commands until a sk
 
 \subsection SSec_WDT WDT Resets
 
-This is the mechanism through which the Arduino IDE uploads new sketches. 
+This is one of the paths into the bootloader, 
+and is the mechanism through which the Arduino IDE normally uploads new sketches. 
 Arduino core libraries (linked into every sketch) purposely generate
 a WDT reset to get into the bootloader when the IDE requests an upload.
 The bootloader interferes with WDT reset events and this could make it more difficult for
@@ -140,11 +152,17 @@ before it is overwritten by the bootloader's own startup code.
 
 \subsection SSec_EXT External Resets
 
+The first path into the bootloader is not available if the sketch disables the USB hardware
+(either accidentally or on purpose). A second path into the bootloader is provided 
+to deal with this situation.
+
 The bootloader will normally start the sketch after a small delay (750ms) when an external reset occurs.
 However, if a second external reset occurs during the delay period the bootloader will
 instead begin accepting AVR910 commands. 
 This is a failsafe mechanism which allows the user to activate the bootloader if a sketch
 has been loaded which renders the CDC serial port non-functional.
+The user simply taps the reset button twice in less than 750ms to enter the bootloader.
+They then have a couple of seconds in which to begin an upload from the IDE.
 
 \subsection SSec_OtherResets Other Reset Events
 
@@ -153,6 +171,13 @@ with an 8-second timeout.
 On most (or all?) MCUs, these are the JTAG and USB reset events.
 
 <img src="../../BootLogic.png" width=481 height=751 style="padding: 16px 16px 16px 16px">
+
+\subsection SSec_SketchResets Sketch-Induced Resets
+
+The bootloader startup logic presents yet one more possible way to get into the bootloader.
+The sketch itself can do the same thing that the core does when the serial port is 
+touched at 1200 baud -- activate the BootKey and then force a WDT reset.
+This all looks the same to Katiana and it will dutifully run the bootloader.
 
 \subsection SSec_IDE_Uploads Arduino IDE Upload Process
 
@@ -167,7 +192,7 @@ As a result, there is no way for the host computer to force a hardware reset on 
 Atmel MCU. 
 A different technique must be used to get into the bootloader for sketch uploads.
 
-To understand this process, one should know that the CDC serial port exposed by the 
+The CDC serial port exposed by the 
 bootloader enumerates with a differnt USB product ID (aka PID) than does the serial port exposed by
 the sketch.
 The bootloader PID is set in <tt>Descriptors.c</tt> and might be <tt>0x9207</tt> for example.
@@ -223,6 +248,18 @@ example:
 This file is not supplied with the Katiana package and must be created by the user.
 Technically, the serial number string could contain any Unicode characters in any language, 
 but Katiana only supports ASCII characters and reports only an English language descriptor.
+See the appendix for more on restrictions imposed on USB serial numbers.
+
+To keep the board on the same COM port, the serial number would need to be
+kept constant if the bootloader is ever re-flashed. It might be useful to put a physical
+label on each such board with the assigned serial number for this purpose.
+
+\subsubsection Ssec_separate_file Why a Separate File?
+
+Some may wonder why the serial number is in a separate header file instead of being defined
+in the <tt>AppConfig.h</tt> file. 
+Having the separate file allows for automated tools to automatically generate new 
+serial numbers without needing to edit <tt>AppConfig.h</tt> every time.
 
 \subsection SSec_validSnChecks Serial Number Validation
 
@@ -272,10 +309,14 @@ Flash and EEPROM byte support are not required.
 
 It may be necessary to add a custom board version which specifies some extra build flags.
 Try building sketches without this at first.
-Sketch uploads should always work the first time after flashing the bootloader and
-they must be uploaded to the bootloader's COM port.
-After the first upload, the sketch will appear on a different port; if uploads to this port
-are failing, then try adding the custom board with build flags as shown below.
+Sketch uploads should always work with a freshly flashed bootloader, and they will be
+directed to the bootloader's COM port from the IDE.
+
+After the first upload, the sketch will appear on a different port.
+The IDE's port setting must be changed to this new port for subsequent uploads. 
+If uploads to the new port are failing, try adding the custom board with build flags as shown below.
+When this fails, it is usually caused by the the core (<tt>CDC.cpp</tt>) using the 
+wrong address for the BootKey.
 
 \code
 <BoardName>.build.extra_flags={build.usb_flags} -DMAGIC_KEY_POS=(RAMEND-1)
@@ -287,7 +328,9 @@ If that for some reason doesn't happen, the above build flags should force the i
 
 \subsection SSec_BuildUsbSNs Custom USB Serial Numbers
 
-If this option is enabled in the bootloader, copies of <tt>USBCore.cpp</tt> and
+If this option is enabled in the bootloader it is possible for the sketch to 
+read the bootloader's USB serial number and use it as well.
+To do this, copies of <tt>USBCore.cpp</tt> and
 <tt>USBAPI.h</tt> in the <tt>Arduino-Core</tt> folder of this distribution
 must be copied into the Arduino cores subdirectory. You may wish to make backup copies 
 of the original files before replacing them.
@@ -399,9 +442,9 @@ Here's an example of macros that could be used to access Katiana's API for sketc
 #define KATIANA_CLASS_SIGNATURE  (uint16_t *)(KATIANA_TABLE_START + KATIANA_TABLE_SIZE - 4)
 #define KATIANA_CDC_SIGNATURE    0xDF00
 
-#define KATIANA_UNUSED_WORD      (uint16_t *)(KATIANA_TABLE_START + KATIANA_TABLE_SIZE - 6)
+#define KATIANA_USB_SERIAL       (uint8_t *)(KATIANA_TABLE_START + KATIANA_TABLE_SIZE - 6)
 
-#define KATIANA_USB_SERIAL       (uint8_t *)(KATIANA_TABLE_START + KATIANA_TABLE_SIZE - 8)
+#define KATIANA_USB_DESCRIPTOR   (uint8_t *)(KATIANA_TABLE_START + KATIANA_TABLE_SIZE - 8)
 
 #define BOOTKEY                  (* (uint16_t *)(RAMEND - 1) )
 #define BOOTKEY_BOOT_REQUEST     0x7777
@@ -429,127 +472,167 @@ Here's an example of macros that could be used to access Katiana's API for sketc
  wdt_enable(0);                   // (presumes that WDT interrupts are not enabled)
  while (1);
  \endcode
- 
-\subsection SSec_UsbSerialAPI USB Serial Number
 
-If the option is enabled, <tt>KATIANA_USB_SERIAL</tt> contains the address in bootloader flash
-of the USB serial number as an ASCII, null-treminated string.
+\subsection Ssec_USBdescAPI USB Descriptor API
 
-Above, it was pointed out that the Arduino sketch enumerates with a different PID on USB
-than does the bootloader. This makes the sketch appear as a different serial port 
-but the sketch will not report a USB serial number and will still have the annoying property 
-of changing COM port numbers as it is moved between USB ports.
+With a modified Arduino core file (<tt>USBCore.cpp</tt>) it is possible to automatically coordinate
+the sketch's USB VID, PID and serial number with the values programmed into the bootloader.
 
-Two modifications are required to have the sketch enumerate with a serial number.
-Sample files with examples of these changes are included with the Katiana package.
-
-\subsubsection SSec_CoreChanges Arduino Core Modification
-
-With a modified Arduino core file (<tt>USBCore.cpp</tt>) it is possible to have the sketch report
-the same serial number as the bootloader. 
-Because the VID for bootloader and sketch are different, it's okay to have them report identical S/Ns.
+Note that as long as the VID for bootloader and sketch are different, it's okay to have them report identical S/Ns.
 This solves the changing port number problem and does not require a serial number to be
 specified with each sketch -- it is kept by the booloader instead.
 
-One way to do this is by defining a global function to obtain a custom serial number.
-A <a href="https://en.wikipedia.org/wiki/Weak_symbol"><b>"weak"</b></a>
-version of this function in the core returns a zero length result, indicating that there is no
-custom S/N available. In this case, the core behavior is unchanged.
+\subsubsection SSec_CoreChanges Arduino Core Modification
 
-The sketch may override this function, providing a copy of the serial number
-in bootloader flash. 
+This is accomplished by defining global weak functions to obtain a custom device and serial number descriptors.
+A <a href="https://en.wikipedia.org/wiki/Weak_symbol"><b>"weak"</b></a>
+version of this function in the core returns a default result, indicating that there are no
+custom descriptors available. In this case, the core behavior is unchanged.
+
+The sketch may override these functions, providing a copy of the descriptors from bootloader flash.
 This alters the core's behavior -- causing it to enumerate on USB with the desired S/N.
-Thus, the core's behavior only changes if the overridden function returns 
-a non-zero length result. This scheme does not require any special compile time flags.
+Thus, the core's behavior only changes if the overridden function is defined. 
+This scheme does not require any special compile time flags.
 
 Here's an example of what the modifications to USBCore.cpp might look like
-to implement this behavior:
+to implement this behavior. First, the weak functions that can be overridden in a sketch:
 
 \code
 //
-// this is the new weak function to obtain a custom USB serial number
-// sketches should override it if they wish to provide a serial number
+uint8_t USB_GetCustomSerialNumber(const uint8_t **buf);
+uint8_t USB_GetCustomDescriptor(const uint8_t **buf);
 //
-__attribute__((weak)) uint8_t USB_GetCustomSerialNumber(uint8_t **AsciiString)
+uint8_t __attribute__ ((weak)) USB_GetCustomSerialNumber(const uint8_t **buffer)
 {
-    if (AsciiString) *AsciiString = 0;
+    if (!buffer) return 0;
+    *buffer = 0;
+    return 0;
+}
+uint8_t __attribute__ ((weak)) USB_GetCustomDescriptor(const uint8_t **buffer)
+{
+    if (!buffer) return 0;
+    *buffer = 0;
     return 0;
 }
 //
-// this is an existing core function with modifications
+\endcode
+
+And the modified <tt>SendDescriptor()</tt> function:
+
+\code
 //
 bool SendDescriptor(USBSetup& setup)
 {
     ...existing code omitted...
     //
-    else if (setup.wValueL == ISERIAL) {
-            uint8_t *serial;
-            uint8_t len = USB_GetCustomSerialNumber( &serial );
-            if (len)
-            {
-                    return USB_SendStringDescriptor(serial, len, 0);
-            }
-#ifdef PLUGGABLE_USB_ENABLED
-            else
-            {
-                    char name[ISERIAL_MAX_LEN];
-                    PluggableUSB().getShortName(name);
-                    return USB_SendStringDescriptor((uint8_t*)name, strlen(name), 0);
-            }
-#endif
-    }
+	if (USB_DEVICE_DESCRIPTOR_TYPE == t)
+	{
+        uint8_t freeit = USB_GetCustomDescriptor(&desc_addr);
+        if (desc_addr)
+        {
+            ret = USB_SendControl(0, desc_addr, *desc_addr);
+            if (freeit) free((void *)desc_addr);
+            return ret;
+        }
+        else
+        {
+		    desc_addr = (const u8*)&USB_DeviceDescriptorIAD;
+        }
+	}
     //
+    ...more code omitted...
+		else if (setup.wValueL == ISERIAL) 
+        {			
+			uint8_t freeit = USB_GetCustomSerialNumber( &desc_addr );
+			if (desc_addr)
+			{
+				ret = USB_SendControl(0, desc_addr, *desc_addr);
+                if (freeit) free((void *)desc_addr);
+                return ret;
+			}
+	    #ifdef PLUGGABLE_USB_ENABLED
+			else
+			{
+				char name[ISERIAL_MAX_LEN];
+				PluggableUSB().getShortName(name);
+				return USB_SendStringDescriptor((uint8_t*)name, strlen(name), 0);
+			}
+	    #endif
+		}
     ...remaining code omitted...
 //    
 \endcode
 
-\subsubsection SSec_SketchChanges Sketch Modifications
+\subsubsection SSec_UsbDevDesc Custom USB Device Descriptor
 
-The second modification is to add a function to the sketch which overrides the 
-weak function that was added to the Arduino core above.
-Here is an example of that function:
+<tt>KATIANA_USB_DESCRIPTOR</tt> contains the address in bootloader flash of the 
+bootloader's USB device descriptor. This is useful for determining the USB PID/VID
+used by the bootloader. Often, the sketch will want to use the same VID and alter
+the PID (increment by one for example). 
+
+The modified Arduino core files contain a weak function
+for obtaining the sketch's device descriptor. Normally they do nothing, but can be
+overridden in the sketch to fetch the descriptor from bootloader flash.
+The file <tt>USB_CustomDescriptors.h</tt> in the <tt>Arduino-Sketch</tt> directory
+contains an example, reporduced here.
+
+Both this example and the serial number retrieval below use this common function:
 
 \code
-//
-uint8_t *usbSerial;
-uint8_t usbSerialLength;
-uint8_t usbSerialCached;
-// ===> this overrides the weak function in USBCore.cpp <===
-uint8_t USB_GetCustomSerialNumber(uint8_t **Buffer) 
+void __attribute__((noinline)) CacheDescriptor( uint8_t **sram, uint16_t progPtr )
 {
-    if (! Buffer) return 0;
-    *Buffer = usbSerial;
-    if (usbSerialCached) return usbSerialLength; 
-    usbSerialCached = 1;
-    // usbSerialLength is still zero from startup init here.
-    uint16_t snptr = pgm_read_word(FLASHEND-7);         // get address of S/N string in flash
-    if (snptr == 0x0000u || snptr == 0xffffu) return 0; // is there a valid address there?
-    uint16_t p = snptr;
-    uint8_t cnt = 0;
-    while (cnt < 127)                                   // read string once to get the length
-    {
-        if (pgm_read_byte(p++) == 0) break;
-        cnt++;
-    }
-    if ((cnt < 12) || (cnt > 126)) return 0;
-    if ( ! (usbSerial = (uint8_t *)malloc(cnt + 1) ) )  // get memory for copy of S/N in SRAM
-        return 0;
-    *Buffer = usbSerial;
-    usbSerialLength = cnt;
-    uint8_t k;
-    uint8_t *s = usbSerial;
-    for (k = usbSerialLength; k; k--)                   // copy string from flash to SRAM
-    {
-	*s++ = pgm_read_byte(snptr++);
-    }
-    *s = 0;                                             // terminate the string
-    return usbSerialLength;
+    if (*sram) return;
+    uint16_t prog = pgm_read_word(progPtr); // read pointer to descriptor from PROGMEM
+    if (prog == 0x0000u || prog == 0xffffu) return; // not a valid pointer
+
+    uint8_t cnt = pgm_read_byte( prog );    // 1st byte of descriptor is always length
+    *sram = (uint8_t *)malloc(cnt);
+    if (! *sram) return;
+    uint8_t *dest = *sram;
+    while (cnt--) *dest++ = pgm_read_byte( prog++ );
 }
-//
 \endcode
 
-A copy of this function is provided in the <tt>Arduino-Sketch</tt> subdirectory 
-of the Katiana distribution.
+This shows how to obtain the bootloader's device descriptor.
+Notice that the Product ID is incremented by one so that the sketch
+reports a different value than the bootloader.
+Using this scheme, it is unfortunately still necessary to enter the correct
+VID/PID values in the <tt>boards.txt</tt> file used by the Arduino IDE.
+
+\code
+uint8_t USB_GetCustomDescriptor(uint8_t **buf)
+{
+    if (!buf) return 0;
+    *buf = 0;
+    CacheDescriptor(buf, FLASHEND - 7);
+    if (*buf)
+    {
+        // increment PID by one (or could toggle if desired).
+        ((DeviceDescriptor *)buf)->idProduct += 1;
+        return 1;   // non-zero indicates that caller must free memory when finished with it.
+    }
+    return 0;
+}
+\endcode
+
+\subsubsection SSec_UsbSerialAPI Custom USB Serial Number
+
+If the option is enabled, <tt>KATIANA_USB_SERIAL</tt> contains the address in bootloader flash
+of the USB serial number string descriptor. 
+That can be accessed as shown below, overriding the core's weak function.
+
+\code
+uint8_t USB_GetCustomSerialNumber(uint8_t **buf)
+{
+    if (!buf) return 0;
+    *buf = 0;
+    CacheDescriptor(buf, FLASHEND - 5);
+    return (*buf) ? 1 : 0;   // non-zero indicates that caller must free memory when finished with it.
+}
+\endcode
+
+It returns the same serial number as the bootloader; this is okay since the sketch
+uses a different PID.
 
 \subsection SSec_MCUSR Recovering MCUSR
 
@@ -607,6 +690,7 @@ void setup(void)
 
 Here's a good question: what happens if multiple functions are declared in seciton <tt>.init0</tt>?
 Which one will run first?
+If the function to save <tt>r2</tt> is not first, there could be problems.
 
 \subsection SSec_API_MemLayout Flash Memory Map
 The boot sector size is determined by the <tt>BOOTSZ</tt> fuse bits.
@@ -632,23 +716,48 @@ the signature table and the linker will fail.
 Changes from the previous bootloader (Arduino version of Caterina) 
 and fixes for bugs are listed here.
 
-\par Executing Empty Flash
+\par Atmel data sheets are wrong about flash page size.
+     More than one such document states that listed page sizes are words.
+     This is <em>wrong</em>. For example, the true flash page size for the
+     ATmega32U4 is 128 bytes -- not 128 words as is claimed in the data sheet.
 
-One low-level bug that is fixed in this design occured when the bootloader was first
-flashed into an erased MCU. The original design would jump to location zero after eight
-seconds, and begin executing erased flash memory.
-Just what the MCU does with erased flash has been much debated but the discussion thread
-<a href="http://www.avrfreaks.net/forum/flashend-triangle?name=PNphpBB2&file=viewtopic&t=95821"><b>here</b></a>
-seems to indicate that it either executes every such location, or every other such location,
-depending on the contents of register <tt>r32</tt>.
-Either way this was a minor (probably unnoticeable) bug and has been fixed in this bootloader.
+\par SPM Operations w/Interrupts Enabled
+    Caterina executes self-programming sequences with interrupts enabled.
+    This is a bug and could result in failure of programming operations,
+    and has been fixed.
+
+\par Executing Empty Flash
+    One low-level bug that is fixed in this design occured when the bootloader was first
+    flashed into an erased MCU. The original design would jump to location zero after eight
+    seconds, and begin executing erased flash memory.
+    Just what the MCU does with erased flash has been much debated but the discussion thread
+    <a href="http://www.avrfreaks.net/forum/flashend-triangle?name=PNphpBB2&file=viewtopic&t=95821"><b>here</b></a>
+    seems to indicate that it either executes every such location, or every other such location,
+    depending on the contents of register <tt>r32</tt>.
+    Either way this was a minor (probably unnoticeable) bug and has been fixed in this bootloader.
 
 \par Brown-Out Reset Action
+    The previous design would always enter the bootloader on a brown-out reset, 
+    but immediately jump to the sketch on a poer-on reset.
+    This seemed inconsistent, and brown-out resets are now treated identically to
+    power-on resets -- the sketch is immediately started.
+    To change this back to the way it was, see the function <tt>SketchStartLogic()</tt>
+    in <tt>Katiana.c</tt>.
 
-The previous design would always enter the bootloader on a brown-out reset, 
-but immediately jump to the sketch on a poer-on reset.
-This seemed inconsistent, and brown-out resets are now treated identically to
-power-on resets -- the sketch is immediately started.
+\par Timer 1
+    Timer 1 was previously run in count-up mode with overflow interrupts enabled.
+    It is now run in CTC (clear on compare match) mode with compare match interrupts enabled.
+    This makes it possible to achieve a relatively constant interrupt rate regardless of the
+    MCU input clock frequency.
+
+\par 32-bit Variables Removed
+    Doing math with 32-bit variables is expensive. Because the AVR910 command set
+    limits (word) addresses to 16 bits, Katiana does all of its address math with unsigned 16-bit variables. 
+    It takes a bit more work (dealing with RAMPZ) to do this, 
+    but the end result is a significant reduction in flash image size.
+
+\par AVR910 Chip Erase Command
+    Support of this command is now optional.
 
 <br />\section Sec_KnownIssues Known Issues:
 
@@ -662,7 +771,10 @@ They are a direct copy from the original Caterina bootloader.
 
 <br/>\section Sec_Options Project Options
 
-Optional behavior and AVR910 protocol support can be enabled in the <tt>Config/AppConfig.h</tt> file.
+Optional behavior and subsets of AVR910 protocol support can be configured in the 
+<tt>Config/AppConfig.h</tt> file.
+The contents of this file in the distribution have sufficient options enabled 
+for Arduino IDE uploads to work.
 These are all just simple define's except as otherwise noted.
 
 <table>
@@ -675,11 +787,6 @@ These are all just simple define's except as otherwise noted.
   <td>ENABLE_SECURITY_CHECKS</td>
   <td>AppConfig.h</td>
 <td>Guards against invalid flash and EEPROM addresses.</td>
- </tr>
- <tr>
-  <td>ENABLE_LED_SUPPORT</td>
-  <td>AppConfig.h</td>
-  <td>Enable da blinky lights.</td>
  </tr>
  <tr>
   <td>LED_DATA_FLASHES</td>
@@ -707,6 +814,11 @@ These are all just simple define's except as otherwise noted.
   <td>Flash memory byte read/write support.</td>
  </tr>
  <tr>
+  <td>ENABLE_FLASH_ERASE_SUPPORT</td>
+  <td>AppConfig.h</td>
+  <td>Enables chip erase command.</td>
+ </tr>
+ <tr>
   <td>ENABLE_LOCK_BYTE_WRITE_SUPPORT</td>
 <td>AppConfig.h</td>
   <td>Enables writing to the lock byte.</td>
@@ -719,7 +831,17 @@ These are all just simple define's except as otherwise noted.
  <tr>
   <td>STRICT_USB_SERIAL</td>
   <td>AppConfig.h</td>
-  <td>Validity checks will be applied to USB serial number.</td>
+  <td>Strict tests applied to USB serial number.</td>
+ </tr>
+ <tr>
+  <td>USB_VID</td>
+  <td>AppConfig.h</td>
+  <td>The Vendor ID to be enumerated.</td>
+ </tr>
+ <tr>
+  <td>USB_PID</td>
+  <td>AppConfig.h</td>
+  <td>The Product ID to be enumerated.</td>
  </tr>
  </table>
 
@@ -783,35 +905,54 @@ It is recommended to use git's <tt>autocrlf</tt> option to manage this.
 <br />\section Sec_PidVid Appendix: USB VIDs and PIDs
 
 If this bootloader is being installed on an existing Arduino board such as Leonardo or 
-LilyPad USB, you should just keep the VID and PID already assigned to the board.
-End of story.
+LilyPad USB, it might be okay to keep the VID and PID already assigned to the board.
+The board is still manufactured by the same vendor, and a serial number is simply being added.
 
-If this is some new thing, the waters become a bit murky.
-For development work, or if you're just making one-off hobby boards for your own use,
-reusing the VIDs/PIDs from Arduino boards is probably okay.
+If this is a custom board, the waters become a bit murky.
+First there's the legal issues, exemplified by this comment in Arduino's <tt>Makefile</tt>
+for the Caterina bootloder:
+
+\code
+#
+# USB vendor ID (VID)
+# reuse of this VID by others is forbidden by USB-IF
+# official Arduino LLC VID
+# VID = 0x2341
+#
+\endcode
+
+Technically, using a VID you don't have rights to is illegal even it is 
+only for personal use.
 If you want your own VID along with the rights to all 65,536 associated PIDs it 
 will cost you at least (US)$5000. Yeah, that works for me.
 There are other alternatives available for both personal and commercial developers
 which may be found by performing an internet search on "usb vid pid for development work".
 
-Some operating systems may not be happy if the board enumerates with 
-a VID/PID combination which has not been officially assigned and published by the USB folks.
+That said, some people may decide to reuse the VIDs/PIDs from an existing board.
+Legal issues aside, what other ramifications are there to doing this?
+
+First of all, selecting a VID which is not currently assigned to anyone may not
+work. Some operating systems may not be happy if the board enumerates with 
+a Vendor ID which has not been officially assigned and published by the USB-IF.
 
 \subsection SSec_ValidSNs Valid USB Serial Numbers
 
 The base USB standard does not specify limitations on the S/N length or what characters
 it may contain. It only requires a UTF-16 lil' endian Unicode string.
+For Katiana, the serial number must be 126 characters or less and only ASCII
+characters between 0x20 and 0x7E inclusive are allowed.
+The makefile will apply a test for these restrictions and the build fails if the S/N is not valid.
+
 The standard for the USB Mass Storage Class / Bulk-Only Transport (Revision 1.0, Sept 31, 1999)
 is much more restrictive. 
-The recommendations adopted here comply with that standard:
+The option <tt>STRICT_USB_SERIAL</tt> applies additional tests in keeping with that standard:
 
 - The serial number must be at least 12 characters long.
 - It must contain only upper case hexadecimal characters (0-9 and A-F).
-- The 80-bit value comprised of VID (16-bits), PID (16-bits), 
-  and last 12 characters of S/N (effectively 48 bits) must be unique.
   
-This driver enforces the minimum length and character value restrictions.
-Serial numbers longer than 126 characters (508 equivalent bits) are also prohibited.
+This standard also requires that the 80-bit value comprised of 
+VID (16-bits), PID (16-bits), and last 12 characters of S/N (effectively 48 bits) be unique.
+There is no way for the build to enforce this requirement.
 
 The bootloader stores the serial number both in flash (as an ASCII string), 
 and SRAM (as a Unicode string).
@@ -826,29 +967,19 @@ concerns raised below about unique serial numbers are moot.
 
 Consider the requirement that the equivalent 80 bits of VID-PID-S/N need to be unique.
 Heck, since this <em>isn't</em> a mass storage product, the requirement may only be
-that the entire serial number be unique (if longer than 12 characters).
-It is likely that lots of hobbyists would use this bootloader without modifying the
-VID/PID since they are valid numbers. 
-This might even be legal since all they would be doing is adding a serial number to 
-an official Arduino product.
-Technically however, it should be Arduino assigning the serial numbers to guarantee
-uniqueness, and not the end user.
+that the VID-PID-and entire serial number be unique.
+The worst case scenario is that lots of hobbyists would use the same VID/PID.
 
 What are the odds that two such boards wind up with the
 exact same serial number? And what would happen if they did?
-First, let's agree to skip over the question of legal issues.
 
 In theory, duplication of serial numbers is a bad thing that should never be allowed to 
 happen and all folks should have their own VID/PID numbers to avoid this. 
 In the real world, for hobbyists this isn't practical.
 If there do happen to be two different Arduino boards which have the exact same 
-80-bit (or longer) ID this won't really be a problem as long as they are not plugged into the 
-same USB host (i.e. PC). The bottom line, is that as long as your personal use and distribution of
+VID-PID-S/N this won't really be a problem as long as they are not plugged into the 
+same USB host (i.e. PC). The bottom line is that as long as your personal use and distribution of
 boards is limited in scope, this is <em>not</em> necessarily a huge problem.
-
-To keep the board on the same COM port, the serial number would need to be
-kept constant if the bootloader is ever re-flashed. It might be useful to put a physical
-label on each such board with the assigned serial number for this purpose.
 
 \subsubsection SSec_ransomSNs Pseudo-Random Serial Numbers
 

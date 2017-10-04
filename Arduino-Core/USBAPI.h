@@ -207,7 +207,8 @@ void USB_Flush(uint8_t ep);
 // The string must be returned in a pre-allocated buffer along with the
 // length. It should also be null-terminated.
 //
-uint8_t USB_GetCustomSerialNumber(uint8_t **Buffer);
+uint8_t USB_GetCustomSerialNumber(const uint8_t **buf);
+uint8_t USB_GetCustomDescriptor(const uint8_t **buf);
 
 #endif
 

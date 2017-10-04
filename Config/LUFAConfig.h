@@ -75,7 +75,10 @@
 //		#define USE_FLASH_DESCRIPTORS
 //		#define USE_EEPROM_DESCRIPTORS
 		#define NO_INTERNAL_SERIAL
-		#define FIXED_CONTROL_ENDPOINT_SIZE      8
+//
+// define this to match what is used in the Arduino core
+//
+		#define FIXED_CONTROL_ENDPOINT_SIZE      64
 		#define DEVICE_STATE_AS_GPIOR            0
 		#define FIXED_NUM_CONFIGURATIONS         1
 //		#define CONTROL_ONLY_DEVICE

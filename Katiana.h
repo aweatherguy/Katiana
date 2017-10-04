@@ -191,6 +191,33 @@ enum AVR109_Commands
 /* Bit mask to extract only the page start address from a flash address */
 #define SPM_PAGEMASK (~(SPM_PAGESIZE-1))
 
+
+/** 
+Determine the proper setting for system clock prescaler,
+or detect if parameters (F_USB and F_CPU) are invalid
+*/
+#if   F_USB == (F_CPU << 8)
+    #define SYSTEM_CLOCK_PRESCALE clock_div_256
+#elif F_USB == (F_CPU << 7)
+    #define SYSTEM_CLOCK_PRESCALE clock_div_128
+#elif F_USB == (F_CPU << 6)
+    #define SYSTEM_CLOCK_PRESCALE clock_div_64
+#elif F_USB == (F_CPU << 5)
+    #define SYSTEM_CLOCK_PRESCALE clock_div_32
+#elif F_USB == (F_CPU << 4)
+    #define SYSTEM_CLOCK_PRESCALE clock_div_16
+#elif F_USB == (F_CPU << 3)
+    #define SYSTEM_CLOCK_PRESCALE clock_div_8
+#elif F_USB == (F_CPU << 2)
+    #define SYSTEM_CLOCK_PRESCALE clock_div_4
+#elif F_USB == (F_CPU << 1)
+    #define SYSTEM_CLOCK_PRESCALE clock_div_2
+#elif F_USB == F_CPU
+    #define SYSTEM_CLOCK_PRESCALE clock_div_1
+#else
+    #error Invalid clock frequencies: (F_USB / F_CPU) must be an integer power of two betwen 1 and 256.
+#endif
+
 /**
 ======================== Function Declarations ======================
 

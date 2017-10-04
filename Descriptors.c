@@ -78,7 +78,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /**
 0x9207 is the PID for LilyPad bootloader, 0x9208 is PID for LilyPad sketches
 */
-const USB_Descriptor_Device_t DeviceDescriptor =
+const USB_Descriptor_Device_t PROGMEM DeviceDescriptor =
 {
 	.Header                 = {.Size = sizeof(USB_Descriptor_Device_t), .Type = DTYPE_Device},
 
@@ -89,8 +89,8 @@ const USB_Descriptor_Device_t DeviceDescriptor =
 
 	.Endpoint0Size          = FIXED_CONTROL_ENDPOINT_SIZE,
 
-	.VendorID               = 0x1B4F,
-	.ProductID              = 0x9207,
+	.VendorID               = USB_VID,
+	.ProductID              = USB_PID,
 	.ReleaseNumber          = VERSION_BCD(1,0,0),
 
 	.ManufacturerStrIndex   = STRING_ID_Manufacturer,
@@ -103,6 +103,8 @@ const USB_Descriptor_Device_t DeviceDescriptor =
 
 	.NumberOfConfigurations = FIXED_NUM_CONFIGURATIONS
 };
+
+static uint8_t SramDeviceDescriptor[ sizeof(DeviceDescriptor) ];
 
 /**
 Configuration descriptor structure. This descriptor, located in SRAM memory, describes the usage
@@ -234,6 +236,7 @@ const USB_Descriptor_String_t ManufacturerString = USB_STRING_DESCRIPTOR(L"Manuf
 const USB_Descriptor_String_t ProductString = USB_STRING_DESCRIPTOR(L"Product Name Goes Here");
 
 #if defined(CUSTOM_USB_SERIAL) || defined(__DOXYGEN__)
+
 #include "UsbHdwrSerial.h"  // will define the USB_HDWR_SERIAL macro.
 /**
  This one has to be in flash so that the sketch can find it and report the proper USB serial number.
@@ -241,8 +244,16 @@ const USB_Descriptor_String_t ProductString = USB_STRING_DESCRIPTOR(L"Product Na
  Rules for valid serial numbers (from Microsoft):
  Length: between 1 and 255 inclusive.
  Valid characters: between 0x20 (ascii space) and 0x7F (ascii), excluding 0x2C (comma).
+ Sorry about the ridiculous macros...but that's what's required to paste an "L" infront of the
+ quoted string defined by USB_HDWR_SERIAL.
 */
-const uint8_t PROGMEM SerialString[] = USB_HDWR_SERIAL; 
+
+#define _WIDEN(x) L ## x
+#define WIDEN(x) _WIDEN(x)
+#define WIDE_SN WIDEN( USB_HDWR_SERIAL )
+
+const USB_Descriptor_String_t PROGMEM SerialString = USB_STRING_DESCRIPTOR( WIDE_SN );
+
 /**
 A buffer to contain the a usb string descriptor for hdwr serial number, built from the
 ASCII string in EEPROM. It's length includes a 2-byte header plus 2 bytes per unicode character.
@@ -251,9 +262,16 @@ includes the extra 2 bytes for header. Or we could do ( ((sizeof( "..." ) - 1) <
 
 Let the init code zero this array so we can tell from the length field if it's already been setup.
 */
-static uint8_t SramSerial[ (sizeof( SerialString ) << 1) ];
+static uint8_t SramSerialString[ sizeof( SerialString ) ];
 
 #endif
+
+void __attribute__((noinline)) CacheDescriptor( uint8_t *sram, uint8_t *prog )
+{
+    if (*sram) return;
+    uint8_t cnt = pgm_read_byte( prog );
+    while (cnt--) *sram++ = pgm_read_byte( prog++ );
+}
 
 /** This function is called by the library when in device mode, and must be overridden (see LUFA library "USB Descriptors"
  *  documentation) by the application code so that the address and size of a requested descriptor can be given
@@ -271,59 +289,43 @@ uint16_t CALLBACK_USB_GetDescriptor(const uint16_t	wValue,
 	const void* Address = NULL;
 	uint16_t    Size    = NO_DESCRIPTOR;
 
-	switch (DescriptorType)
-	{
-		case DTYPE_Device:
-			Address = &DeviceDescriptor;
-			Size    = sizeof(USB_Descriptor_Device_t);
-			break;
-		case DTYPE_Configuration:
-			Address = &ConfigurationDescriptor;
-			Size    = sizeof(USB_Descriptor_Configuration_t);
-			break;
-		case DTYPE_String:
-			if (DescriptorNumber == STRING_ID_Language)
-			{
-				Address = &LanguageString;
-				Size    = LanguageString.Header.Size;
-			}
-			else if (DescriptorNumber == STRING_ID_Manufacturer)
-			{
-				Address = &ManufacturerString;
-				Size    = ManufacturerString.Header.Size;
-			}
-			else if (DescriptorNumber == STRING_ID_Product)
-			{
-				Address = &ProductString;
-				Size    = ProductString.Header.Size;
-			}
+    switch (DescriptorType)
+    {
+    case DTYPE_Device:
+        CacheDescriptor( SramDeviceDescriptor, (uint8_t *)&DeviceDescriptor );
+        Address = SramDeviceDescriptor;
+        Size    = SramDeviceDescriptor[0];
+        break;
+    case DTYPE_Configuration:
+        Address = &ConfigurationDescriptor;
+        Size    = sizeof(USB_Descriptor_Configuration_t);
+        break;
+    case DTYPE_String:
+        if (DescriptorNumber == STRING_ID_Language)
+        {
+            Address = &LanguageString;
+            Size    = LanguageString.Header.Size;
+        }
+        else if (DescriptorNumber == STRING_ID_Manufacturer)
+        {
+            Address = &ManufacturerString;
+            Size    = ManufacturerString.Header.Size;
+        }
+        else if (DescriptorNumber == STRING_ID_Product)
+        {
+            Address = &ProductString;
+            Size    = ProductString.Header.Size;
+        }
 #if defined(CUSTOM_USB_SERIAL)
-			else if (DescriptorNumber == STRING_ID_Serial)
-			{
-                                if (SramSerial[0] == 0)  // Has the SRAM value already been initialized?
-                                {
-                                    //
-                                    // not initialized, build valid string descriptor with S/N from EEPROM.
-                                    //
-                                    SramSerial[0] = sizeof(SramSerial);     // set length field -- size of entire struct including length byte
-                                    SramSerial[1] = DTYPE_String;           // set data type field -- type is string.
-
-				    uint8_t *src = (uint8_t *)SerialString;
-                                    //
-                                    // in this loop, k is incremented by two -- once in the for statement and once in the call to pgm_read_byte()
-                                    //
-				    for (uint8_t k=2; k < sizeof(SramSerial); k++)
-				    {
-				        SramSerial[k++] = pgm_read_byte_near( src++ );  // set Unicode low byte, same as ASCII byte
-                                        SramSerial[k] = 0;                              // set Unicode high byte (always zero for ASCII chars)
-				    }
-                                }
-				Address = &SramSerial;
-				Size    = sizeof(SramSerial);
-			}
+        else if (DescriptorNumber == STRING_ID_Serial)
+        {
+            CacheDescriptor( SramSerialString, (uint8_t *)&SerialString );
+            Address = SramSerialString;
+            Size    = SramSerialString[0];
+        }
 #endif
-			break;
-	}
+        break;
+    }
 
 	*DescriptorAddress = Address;
 	return Size;

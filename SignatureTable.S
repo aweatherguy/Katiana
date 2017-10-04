@@ -66,16 +66,21 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ; It is zero for now, but can be set to something meaninful if desired.
 ; The first four bytes could also be removed, leaving 4092 bytes for bootloader.
 ;
+#include "Config/AppConfig.h"
+
 .section .apitable_signatures, "ax"
 .global BootloaderAPI_Signatures
+
+.extern DeviceDescriptor
+#if defined( CUSTOM_USB_SERIAL )
 .extern SerialString
+#else
+#define SerialString 0x0000
+#endif
+
 BootloaderAPI_Signatures:
 
-#if defined( CUSTOM_USB_SERIAL )
-	.word SerialString  ; 
-#else
-	.word 0x0000
-#endif
-	.word 0x0000	    ; unused
-	.word 0xDF00	    ; Signature for the CDC class bootloader
-	.word 0xDCFB	    ; Signature for a LUFA class bootloader
+	.word DeviceDescriptor  ; API so sketch can determin VID/PID
+	.word SerialString      ; API for sketch to find serial number 
+	.word 0xDF00	        ; Signature for the CDC class bootloader
+	.word 0xDCFB	        ; Signature for a LUFA class bootloader

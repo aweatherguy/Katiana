@@ -20,6 +20,7 @@
 #include "USBAPI.h"
 #include "PluggableUSB.h"
 #include <stdlib.h>
+#include <string.h>
 
 #if defined(USBCON)
 
@@ -512,7 +513,17 @@ bool SendDescriptor(USBSetup& setup)
 	const u8* desc_addr = 0;
 	if (USB_DEVICE_DESCRIPTOR_TYPE == t)
 	{
-		desc_addr = (const u8*)&USB_DeviceDescriptorIAD;
+        uint8_t freeit = USB_GetCustomDescriptor(&desc_addr);
+        if (desc_addr)
+        {
+            ret = USB_SendControl(0, desc_addr, *desc_addr);
+            if (freeit) free((void *)desc_addr);
+            return ret;
+        }
+        else
+        {
+		    desc_addr = (const u8*)&USB_DeviceDescriptorIAD;
+        }
 	}
 	else if (USB_STRING_DESCRIPTOR_TYPE == t)
 	{
@@ -525,13 +536,14 @@ bool SendDescriptor(USBSetup& setup)
 		else if (setup.wValueL == IMANUFACTURER) {
 			return USB_SendStringDescriptor(STRING_MANUFACTURER, strlen(USB_MANUFACTURER), TRANSFER_PGM);
 		}
-		else if (setup.wValueL == ISERIAL) {
-			uint8_t *serial;
-			uint8_t len = USB_GetCustomSerialNumber( &serial );
-
-			if (len)
+		else if (setup.wValueL == ISERIAL) 
+        {			
+			uint8_t freeit = USB_GetCustomSerialNumber( &desc_addr );
+			if (desc_addr)
 			{
-				return USB_SendStringDescriptor(serial, len, 0);
+				ret = USB_SendControl(0, desc_addr, *desc_addr);
+                if (freeit) free((void *)desc_addr);
+                return ret;
 			}
 	    #ifdef PLUGGABLE_USB_ENABLED
 			else
@@ -766,9 +778,17 @@ static inline void USB_ClockEnable()
 // This weak function gives the sketch an ability to override it
 // and provide a custom serial number for enumeration on USB.
 //
-uint8_t __attribute__ ((weak)) USB_GetCustomSerialNumber(uint8_t **buffer)
+uint8_t __attribute__ ((weak)) USB_GetCustomSerialNumber(const uint8_t **buffer)
 {
     if (!buffer) return 0;
+    *buffer = 0;
+    return 0;
+}
+
+uint8_t __attribute__ ((weak)) USB_GetCustomDescriptor(const uint8_t **buffer)
+{
+    if (!buffer) return 0;
+    *buffer = 0;
     return 0;
 }
 

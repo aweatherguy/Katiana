@@ -88,9 +88,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #if defined(__cplusplus)
 extern "C" {
 #endif
-
-#if defined(ENABLE_LED_SUPPORT)
-
 // 
 // Edit to specify the PORT, DDR and BIT for each of the three LEDs
 // Also specify the bit value when the LED is turned on..."1" or "0" ?
@@ -112,7 +109,6 @@ extern "C" {
 #define LEDS_RX_ACTIVE  0
 #define LEDS_TX_ACTIVE  0
 #define LEDS_L_ACTIVE   1
-
 
 // ===============================================================
 // =============== END OF USER CONFIGURATION SECTION =============
@@ -250,28 +246,11 @@ These functions are purposely NOT inline to save flash bytes.
 #endif
     }
 
-#endif
-#else
-#define LEDs_Init() 
-#define LEDs_Disable()
-
-#define LEDs_RX_Off()
-#define LEDs_RX_On()
-#define LEDs_RX_Toggle()
-
-#define LEDs_TX_Off()
-#define LEDs_TX_On()
-#define LEDs_TX_Toggle()
-
-#define LEDs_L_Off()
-#define LEDs_L_On()
-#define LEDs_L_Toggle()
-#endif
+#endif  // !defined(__DOXYGEN__)
 
     /* Disable C linkage for C++ Compilers: */
 #if defined(__cplusplus)
 }
 #endif
-
 /** @} */
 
