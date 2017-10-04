@@ -97,6 +97,8 @@ The bootloader configures the MCU's USB interface as follows:
  </tr>
 </table>
 
+<div style="page-break-after: always;"></div>
+
 <br />\section Sec_Running Bootloader Logic
 
 At startup, the bootloader executes a sequence of logical tests and delays as depicted in the
@@ -170,8 +172,6 @@ All reset events not mentioned above cause the bootloader to begin accepting AVR
 with an 8-second timeout. 
 On most (or all?) MCUs, these are the JTAG and USB reset events.
 
-<img src="../../BootLogic.png" width=481 height=751 style="padding: 16px 16px 16px 16px">
-
 \subsection SSec_SketchResets Sketch-Induced Resets
 
 The bootloader startup logic presents yet one more possible way to get into the bootloader.
@@ -213,6 +213,10 @@ Before doing this however, it activates the BootKey so the booloader knows that 
 The IDE then waits for the sketch serial port to disappear, and for the bootloader serial port
 to appear. Once this happens it begins sending AVR910 commands to the bootloader.
 
+<img src="../../BootLogic.png" width=481 height=751 style="padding: 16px 16px 16px 16px">
+
+<div style="page-break-after: always;"></div>
+
 <br />\section Sec_UsbSerial Custom USB Serial Numbers
 
 The bootloader can be configured to enumerate on USB with a custom hardware serial number.
@@ -234,7 +238,7 @@ how to pick a serial number.
 \subsection SSec_EnablingUsbSerials Enabling Custom USB S/Ns
 
 To enable custom S/Ns, define the macro <tt>CUSTOM_USB_SERIAL</tt> in the <tt>AppConfig.h</tt> header file.
-The serial number needs to be placed in the file 
+The actual serial number the bootloader will report needs to be placed in the file 
 <tt>UsbHdwrSerial.h</tt> prior to building the bootloader, and should look someithing like this
 example:
 
@@ -263,19 +267,26 @@ serial numbers without needing to edit <tt>AppConfig.h</tt> every time.
 
 \subsection SSec_validSnChecks Serial Number Validation
 
-As described in the appendix, it may make sense to place some restrictions on user-defined
+Some simple restrictions on serial numbers are applied during the build process.
+A check for valid ASCII charcters and loose limits on string length is about it.
+
+As described in the appendix, it may make sense to place more tight restrictions on user-defined
 USB  serial numbers.
 The restrictions suggested there may be imposed by defining the macro <tt>STRICT_USB_SERIAL</tt>
-in the <tt>AppConfig.h</tt> file. These restrictions are enforced during the build by
-a small program defined in <tt>ValidateUsbHdwrSerial.c</tt>.
-This program is compiled during the build using the native C compiler (<tt>cc</tt>).
-It can be easily modified to support a different set of validation rules.
+in the <tt>AppConfig.h</tt> file. 
 To allow unrestricted serial numbers, comment out the definition of <tt>STRICT_USB_SERIAL</tt>
 in <tt>AppConfig.h</tt>.
 
-If validation is enabled, the S/N must be between 12 and 126 characters long and may only 
+If strict validation is enabled, the S/N must be between 12 and 126 characters long and may only 
 contain upper case hexadecimal characters (0-9, A-F). 
 See the appendix for more about the requirement for unique numbers.
+
+These restrictions are enforced during the build by
+a small program defined in <tt>ValidateUsbHdwrSerial.c</tt>.
+This program is compiled during the build using the native C compiler (<tt>cc</tt>).
+It can be easily modified to support a different set of validation rules.
+
+<div style="page-break-after: always;"></div>
 
 <br />\section Sec_Building Building Katiana
 
@@ -293,6 +304,8 @@ Beware however that changing these typically requires a custom Boards.txt file i
 installation -- that is where USB VID/PID for the sketch are specified.</li>
 <li>If custom USB serial numbers are enabled, create/edit the file <tt>UsbHdwrSerial.h</tt> with the desired USB
     hardware serial number. The script <tt>NewUsbHdwrSerial.sh</tt> may be used for this purpose if desired.
+<li>Edit <tt>Board/LEDs.h</tt> to match the LED assignments on your board (if any).
+If all LED options are disabled in <tt>AppConfig.h</tt> this step may be skipped. </li>
 <li>Run <tt>make</tt>.</li>
 <li>To generate HTML content in the <tt>Documentation</tt> folder, run <tt>make doxygen</tt>.</li>
 <li>On Windows, edit <tt>Katiana-Bootloader.inf</tt> and change the USB VID/PID specified there to 
@@ -304,6 +317,15 @@ Arduino VID/PID combination is being used.
 AVRDude as used by the Arduino IDE emits only AVR910 block read/write commands for upload/verification, 
 so it is only necessary to enable block support when building Katiana.
 Flash and EEPROM byte support are not required.
+
+<br />\section Sec_Installation Driver Installation
+
+After running this bootloader for the first time on a new computer, you will need to supply the .INF
+file located in this bootloader project's directory as the device's driver when running under Windows.
+This will enable Windows to use its inbuilt CDC drivers, negating the need for custom drivers for the
+device. Other Operating Systems should automatically use their own inbuilt CDC-ACM drivers.
+
+<div style="page-break-after: always;"></div>
 
 <br />\section Sec_BuildSketch Building Arduino Sketches
 
@@ -326,9 +348,12 @@ The Arduino core libraries should detect the new bootloader based on its signatu
 at (FLASHEND-1) and automatically use the correct location for the boot key.
 If that for some reason doesn't happen, the above build flags should force the issue.
 
-\subsection SSec_BuildUsbSNs Custom USB Serial Numbers
+\subsection SSec_BuildCustomDesc Custom USB Descriptors
 
-If this option is enabled in the bootloader it is possible for the sketch to 
+See the API section for more on how to get the sketch to use the bootloader's 
+USB device descriptor.
+
+If the custom USB serial number option is enabled in the bootloader it is possible for the sketch to 
 read the bootloader's USB serial number and use it as well.
 To do this, copies of <tt>USBCore.cpp</tt> and
 <tt>USBAPI.h</tt> in the <tt>Arduino-Core</tt> folder of this distribution
@@ -337,12 +362,7 @@ of the original files before replacing them.
 The core files provided in this distribution are valid for Arduino version 1.8.4 and
 may need to be modified to work with future Arduino versions.
 
-<br />\section Sec_Installation Driver Installation
-
-After running this bootloader for the first time on a new computer, you will need to supply the .INF
-file located in this bootloader project's directory as the device's driver when running under Windows.
-This will enable Windows to use its inbuilt CDC drivers, negating the need for custom drivers for the
-device. Other Operating Systems should automatically use their own inbuilt CDC-ACM drivers.
+<div style="page-break-after: always;"></div>
 
 <br />\section Sec_HostApp Host Controller Application
 
@@ -397,6 +417,8 @@ avrdude -c AVR109 -p at90usb1287 -P COM0 -U flash:w:Sketch.ino.hex -U eeprom:w:S
 Run AVRDude with no command line options, 
 or refer to the AVRDude project documentation for additional usage instructions.
 
+<div style="page-break-after: always;"></div>
+
 \subsection SSec_ArduinoUploads Arduino
 
 No additional changes should be required for uploads to work from the Arduino IDE.
@@ -421,13 +443,16 @@ specifies the new <tt>eepdude</tt> programmer, like this:
 The only issue with this setup is that uploading a sketch which does not define
 any EEPROM data may cause avrdude to report an error.
 
+<div style="page-break-after: always;"></div>
+
 <br />\section Sec_API API for Sketches
 
 Information about the bootloader is available to sketches and Arduino core libraries
 at pre-defined locations in flash.
-The arduino core libraries (CDC.cpp) use this to determine the bootloader version.
+The arduino core libraries (CDC.cpp) currently use this to determine the bootloader version.
 Without this, the Arduino core won't know where the BootKey is located.
 
+The API also provides access to custom USB descriptors programmed into the bootloader.
 Here's an example of macros that could be used to access Katiana's API for sketches:
 
 \code
@@ -634,6 +659,8 @@ uint8_t USB_GetCustomSerialNumber(uint8_t **buf)
 It returns the same serial number as the bootloader; this is okay since the sketch
 uses a different PID.
 
+<div style="page-break-after: always;"></div>
+
 \subsection SSec_MCUSR Recovering MCUSR
 
 When the MCU is reset, MCUSR contains bits indicating the cause of the reset.
@@ -711,6 +738,8 @@ the signature table and the linker will fail.
 
 <img src="../../MemoryMap.png" width=418 height=401 style="padding: 16px 16px 16px 16px" />
 
+<div style="page-break-after: always;"></div>
+
 \section Sec_bugfixes Changes/Bug Fixes
 
 Changes from the previous bootloader (Arduino version of Caterina) 
@@ -758,6 +787,8 @@ and fixes for bugs are listed here.
 
 \par AVR910 Chip Erase Command
     Support of this command is now optional.
+    
+<div style="page-break-after: always;"></div>
 
 <br />\section Sec_KnownIssues Known Issues:
 
@@ -768,6 +799,8 @@ only the ATmega32U4 MCU has been verified to work.
 \par Only block read/write has been tested.
 Options for flash and EEPROM byte support and lock byte writing have not been tested at all.
 They are a direct copy from the original Caterina bootloader.
+
+<div style="page-break-after: always;"></div>
 
 <br/>\section Sec_Options Project Options
 
@@ -844,6 +877,8 @@ These are all just simple define's except as otherwise noted.
   <td>The Product ID to be enumerated.</td>
  </tr>
  </table>
+ 
+<div style="page-break-after: always;"></div>
 
  \subsection SSec_HdwrConfig Hardware Configuration
 
@@ -884,6 +919,8 @@ These are all just simple define's except as otherwise noted.
  </tr>
 </table>
 
+<div style="page-break-after: always;"></div>
+
  <br />\section Sec_Conventions Programming Conventions
 
  Katiana is written in C. In general, the following conventions are used:
@@ -901,6 +938,8 @@ These are all just simple define's except as otherwise noted.
 The author edits many of the source files in VisualStudio and they may contain either
 LF or CR/LF line endings. 
 It is recommended to use git's <tt>autocrlf</tt> option to manage this.
+
+<div style="page-break-after: always;"></div>
 
 <br />\section Sec_PidVid Appendix: USB VIDs and PIDs
 
@@ -1022,6 +1061,8 @@ script above to <tt>${sum:0:32}</tt> to get a 32-character serial number for exa
 
 The shell script above is provided with the Katiana distribution and is named
 <tt>NewUsbHdwrSerial.sh</tt>.
+
+<div style="page-break-after: always;"></div>
 
  <br />\section Sec_License Appendix: Software License
  
