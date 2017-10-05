@@ -55,7 +55,6 @@ Here's a list of the more significant changes:
     </li>
     <li>Communications between bootloader and sketch cannot be accidentally 
       interfered with by the sketch.
-    <li>Bootloader no longer executes erased flash when no sketch is present.</li>
     <li>Various changes to reduce compiled flash image size.
 </ul>
 
@@ -754,16 +753,6 @@ and fixes for bugs are listed here.
     Caterina executes self-programming sequences with interrupts enabled.
     This is a bug and could result in failure of programming operations,
     and has been fixed.
-
-\par Executing Empty Flash
-    One low-level bug that is fixed in this design occured when the bootloader was first
-    flashed into an erased MCU. The original design would jump to location zero after eight
-    seconds, and begin executing erased flash memory.
-    Just what the MCU does with erased flash has been much debated but the discussion thread
-    <a href="http://www.avrfreaks.net/forum/flashend-triangle?name=PNphpBB2&file=viewtopic&t=95821"><b>here</b></a>
-    seems to indicate that it either executes every such location, or every other such location,
-    depending on the contents of register <tt>r32</tt>.
-    Either way this was a minor (probably unnoticeable) bug and has been fixed in this bootloader.
 
 \par Brown-Out Reset Action
     The previous design would always enter the bootloader on a brown-out reset, 

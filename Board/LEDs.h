@@ -92,7 +92,7 @@ extern "C" {
 // Edit to specify the PORT, DDR and BIT for each of the three LEDs
 // Also specify the bit value when the LED is turned on..."1" or "0" ?
 //
-
+#if 0
 // Leonardo
 #define LEDS_RX_PORT	PORTB
 #define LEDS_TX_PORT	PORTD
@@ -110,6 +110,27 @@ extern "C" {
 #define LEDS_TX_ACTIVE  0
 #define LEDS_L_ACTIVE   1
 
+#else
+// WxRecorder (LED_L not implemented)
+
+#define LEDS_RX_PORT	PORTB
+#define LEDS_TX_PORT	PORTC
+#define LEDS_L_PORT	PORTB
+
+#define LEDS_RX_DDR	DDRB
+#define LEDS_TX_DDR	DDRC
+#define LEDS_L_DDR	DDRB
+
+#define LEDS_RX_BIT	0x40
+#define LEDS_TX_BIT	0x40
+#define LEDS_L_BIT	0x10
+    
+#define LEDS_RX_ACTIVE  1
+#define LEDS_TX_ACTIVE  1
+#define LEDS_L_ACTIVE   1
+
+#endif
+
 // ===============================================================
 // =============== END OF USER CONFIGURATION SECTION =============
 // ===============    DO NOT EDIT BELOW THIS LINE    =============
@@ -118,25 +139,31 @@ extern "C" {
 #if LEDS_RX_ACTIVE
 #define LEDS_RX_ON	|=
 #define LEDS_RX_OFF	&= ~
+#define LEDS_RX_TEST ((LEDS_RX_PORT & ~LEDS_RX_BIT) != 0)
 #else
 #define LEDS_RX_OFF	|=
 #define LEDS_RX_ON	&= ~
+#define LEDS_RX_TEST ((LEDS_RX_PORT & ~LEDS_RX_BIT) == 0)
 #endif
 
 #if LEDS_TX_ACTIVE
 #define LEDS_TX_ON	|=
 #define LEDS_TX_OFF	&= ~
+#define LEDS_TX_TEST ((LEDS_TX_PORT & ~LEDS_TX_BIT) != 0)
 #else
 #define LEDS_TX_OFF	|=
 #define LEDS_TX_ON	&= ~
+#define LEDS_TX_TEST ((LEDS_TX_PORT & ~LEDS_TX_BIT) == 0)
 #endif
 
 #if LEDS_L_ACTIVE
 #define LEDS_L_ON	|=
 #define LEDS_L_OFF	&= ~
+#define LEDS_L_TEST ((LEDS_L_PORT & ~LEDS_L_BIT) != 0)
 #else
 #define LEDS_L_OFF	|=
 #define LEDS_L_ON	&= ~
+#define LEDS_L_TEST ((LEDS_L_PORT & ~LEDS_L_BIT) == 0)
 #endif
 
 /** 
@@ -146,7 +173,7 @@ These functions are purposely NOT inline to save flash bytes.
    
 #if !defined(__DOXYGEN__)
 
-    __attribute__((noinline)) void LEDs_Init(void)
+    inline void LEDs_Init(void)
     {
 #if defined LED_DATA_FLASHES
 	LEDS_RX_DDR |= LEDS_RX_BIT;
@@ -162,7 +189,7 @@ These functions are purposely NOT inline to save flash bytes.
 #endif
     }
 
-    __attribute__((noinline)) void LEDs_Disable(void)
+    inline void LEDs_Disable(void)
     {
 	/** 
 	Set everything back to original state -- all DDR bits to input, and all port bits to zero.
@@ -182,64 +209,64 @@ These functions are purposely NOT inline to save flash bytes.
 	LEDS_L_PORT = 0;
 #endif
     }
-
-    __attribute__((noinline)) void LEDs_RX_Off(void)
+    
+    inline void LEDs_RX_Off(void)
     {
 #if defined LED_DATA_FLASHES
 	LEDS_RX_PORT LEDS_RX_OFF LEDS_RX_BIT;
 #endif
     }
 
-    __attribute__((noinline)) void LEDs_RX_On(void)
+    inline void LEDs_RX_On(void)
     {
 #if defined LED_DATA_FLASHES
 	LEDS_RX_PORT LEDS_RX_ON LEDS_RX_BIT;
 #endif
     }
 
-    __attribute__((noinline)) void LEDs_RX_Toggle(void)
+    inline void LEDs_RX_Toggle(void)
     {
 #if defined LED_DATA_FLASHES
 	LEDS_RX_PORT ^= LEDS_RX_BIT;
 #endif
     }
 
-    __attribute__((noinline)) void LEDs_TX_Off(void)
+    inline void LEDs_TX_Off(void)
     {
 #if defined LED_DATA_FLASHES
 	LEDS_TX_PORT LEDS_TX_OFF LEDS_TX_BIT;
 #endif
     }
 
-    __attribute__((noinline)) void LEDs_TX_On(void)
+    inline void LEDs_TX_On(void)
     {
 #if defined LED_DATA_FLASHES
 	LEDS_TX_PORT LEDS_TX_ON LEDS_TX_BIT;
 #endif
     }
 
-    __attribute__((noinline)) void LEDs_TX_Toggle(void)
+    inline void LEDs_TX_Toggle(void)
     {
 #if defined LED_DATA_FLASHES
 	LEDS_TX_PORT ^= LEDS_TX_BIT;
 #endif
     }
 
-    __attribute__((noinline)) void LEDs_L_Off(void)
+    inline void LEDs_L_Off(void)
     {
 #if LED_START_FLASHES > 0
 	LEDS_L_PORT LEDS_L_OFF LEDS_L_BIT;
 #endif
     }
 
-    __attribute__((noinline)) void LEDs_L_On(void)
+    inline void LEDs_L_On(void)
     {
 #if LED_START_FLASHES > 0
 	LEDS_L_PORT LEDS_L_ON LEDS_L_BIT;
 #endif
     }
 
-    __attribute__((noinline)) void LEDs_L_Toggle(void)
+    inline void LEDs_L_Toggle(void)
     {
 #if LED_START_FLASHES > 0
 	LEDS_L_PORT ^= LEDS_L_BIT;

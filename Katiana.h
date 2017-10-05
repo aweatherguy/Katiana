@@ -248,6 +248,7 @@ static void StartSketch(uint8_t) __attribute__((noreturn, noinline));
 
 /** Top level I/O functions to send and receive bytes from the CDC COM port */
 static uint8_t CdcReceiveByte(void);
+static uint8_t       CdcFlush(void);
 static void       CdcSendByte(const uint8_t Response);
 
 #if defined(ENABLE_BLOCK_SUPPORT)
