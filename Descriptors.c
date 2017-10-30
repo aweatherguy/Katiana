@@ -104,7 +104,7 @@ const USB_Descriptor_Device_t PROGMEM DeviceDescriptor =
 	.NumberOfConfigurations = FIXED_NUM_CONFIGURATIONS
 };
 
-static uint8_t SramDeviceDescriptor[ sizeof(DeviceDescriptor) ];
+static uint8_t SramDeviceDescriptor[ sizeof(USB_Descriptor_Device_t) ];
 
 /**
 Configuration descriptor structure. This descriptor, located in SRAM memory, describes the usage
@@ -257,12 +257,11 @@ const USB_Descriptor_String_t PROGMEM SerialString = USB_STRING_DESCRIPTOR( WIDE
 /**
 A buffer to contain the a usb string descriptor for hdwr serial number, built from the
 ASCII string in EEPROM. It's length includes a 2-byte header plus 2 bytes per unicode character.
-Since SerialString includes a terminating null character, if we double it then it automatically
-includes the extra 2 bytes for header. Or we could do ( ((sizeof( "..." ) - 1) << 1) + 2 )...it's the same result.
+Not sure if we need to include a terminating null 16-bits but we do anyway just to be safe.
 
 Let the init code zero this array so we can tell from the length field if it's already been setup.
 */
-static uint8_t SramSerialString[ sizeof( SerialString ) ];
+static uint8_t SramSerialString[ sizeof( USB_StdDescriptor_Header_t ) + (strlen(USB_HDWR_SERIAL) << 1) + 2 ];
 
 #endif
 
@@ -287,20 +286,28 @@ uint16_t CALLBACK_USB_GetDescriptor(const uint16_t	wValue,
 	const uint8_t  DescriptorNumber = (wValue & 0xFF);
 
 	const void* Address = NULL;
-	uint16_t    Size    = NO_DESCRIPTOR;
-
-    switch (DescriptorType)
+    //
+    // save 18 bytes by using uint8_t for Size instead of uint16_t.
+    // every size value we return comes from a single byte length field in a descriptor,
+    // so it's impossible that any length we return is more than 255.
+    //
+	uint8_t    Size    = NO_DESCRIPTOR;
+    //
+    // we save two bytes making this an if..else if...else if... structure compared to switch()
+    //
+    if (DescriptorType == DTYPE_Device)
     {
-    case DTYPE_Device:
         CacheDescriptor( SramDeviceDescriptor, (uint8_t *)&DeviceDescriptor );
         Address = SramDeviceDescriptor;
         Size    = SramDeviceDescriptor[0];
-        break;
-    case DTYPE_Configuration:
+    }
+    else if (DescriptorType == DTYPE_Configuration)
+    {
         Address = &ConfigurationDescriptor;
         Size    = sizeof(USB_Descriptor_Configuration_t);
-        break;
-    case DTYPE_String:
+    }
+    else if (DescriptorType == DTYPE_String)
+    {
         if (DescriptorNumber == STRING_ID_Language)
         {
             Address = &LanguageString;
@@ -324,7 +331,6 @@ uint16_t CALLBACK_USB_GetDescriptor(const uint16_t	wValue,
             Size    = SramSerialString[0];
         }
 #endif
-        break;
     }
 
 	*DescriptorAddress = Address;

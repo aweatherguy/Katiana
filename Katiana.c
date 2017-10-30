@@ -198,7 +198,10 @@ static uint8_t initialMCUSR ATTR_NO_INIT;
 This is set based on whether the reset vector at location zero is all ones or not.
 if a sketch is loaded, the reset vector will not be all ones.
 */
-static volatile uint8_t sketchPresent ATTR_NO_INIT;
+// allowing this to be initialized breaks the boot loader...???
+// related to main() being in section init9 ... ???
+//
+static volatile uint8_t sketchPresent;
 
 /**
 timeout is decremented in the Timer 1 compare match ISR and stops when it reaches zero.
@@ -207,6 +210,7 @@ timeout ticks are  at 25Hz, 40ms per tick.
 8 seconds = 200 ticks, 760ms = 19 ticks, etc
 */
 static volatile uint8_t timeout ATTR_NO_INIT;
+
 #if !defined(__DOXYGEN__)
 #define TIMEOUT_PERIOD			    200
 #define SHORT_TIMEOUT_PERIOD		 12
@@ -274,7 +278,7 @@ void
     originalBootKey = bootKey;
 }
 
-static void __attribute__((noinline)) SetTimeout(uint8_t howLong)
+static void SetTimeout(uint8_t howLong)
 {
     cli();
     timeout = howLong;
@@ -287,9 +291,16 @@ Performs a minimal amount of cleanup and then jumps to the reset vector
 It passes the initial value in MCUSR to the sketch in register r2.
 Do NOT call this function if there is no sketch loaded!!!
 
-\param[in] initialMCUSR is the value to be passed to  the sketch in MCU register <tt>r2</tt>.
+Several attributes are applied to this function in Katiana.h:
+
+- noreturn: causes the compiler to use rjmp instead of rcall, saving 2 bytes per call.
+- naked:    ensures that there will be no ret instruction at the end.
+- noinline: this is called from several places and cannot be inlined.
+
+There WILL be compiler warning about the fuction actually returning.
+Not sure how to get rid of that, but it is does not reflect any bugs in the resulting code.
 */
-static void StartSketch(uint8_t initialMCUSR)
+static void StartSketch( void )
 {
     cli();
 
@@ -304,19 +315,26 @@ static void StartSketch(uint8_t initialMCUSR)
     MCUCR = (1 << IVCE);
     MCUCR = 0;
     // 
-    // Save the reset flags in a CPU register (R2), then jump to the reset vector at address zero.
+    // Save the reset flags in a CPU register (R2) for the sketch to recover.
     // This can be accessed in the sketch by putting code in .init0, which executes before normal c init code.
     // That code can save r2 in a global variable for later use. See comments at top of this file
     // for a code example showing how to do this.
     //
-    __asm__ __volatile__ (
-        "mov r2, %0\n\t"	    \
-        "jmp 0x0000\n"
-        :
-    : "r" (initialMCUSR)
-        );
-
-    for (;;);   // we never get here but this gets rid of compiler warning.
+    __asm__ __volatile__ ("mov r2, %0\n" : : "r" (initialMCUSR) );
+    //
+    // here are two ways to jump to the reset vector:
+    //
+    // 1) the goto uses 6 bytes -- two LDI and one IJMP instruction.
+    //    that's two more bytes than the 4-byte "jmp 0x0000" instruction.
+    //    This method gets rid of a compiler warning that this no-return function actually does return.
+    //
+    // 2) If you really need the extra two bytes, then use the "jmp 0x0000" instead and live
+    //    with the compiler warning.
+    //
+    
+    goto *0; // maybe only works with GCC based compilers.
+    
+    // __asm__ __volatile__ ( "jmp 0x0000\n" : : );
 }
 
 /** 
@@ -339,9 +357,11 @@ static void inline SketchStartLogic(void)
     //
     // Power-on and brown-out resets will always cause the sketch to load immediately.
     //
-    if ( initialMCUSR & (_BV(PORF) | _BV(BORF)) )
+    uint8_t pwrReset = initialMCUSR & (_BV(PORF) | _BV(BORF));
+
+    if (pwrReset)
     {	
-        StartSketch( initialMCUSR );
+        StartSketch();
     } 
     //
     // if the boot key is active, the don't run the sketch...
@@ -373,7 +393,7 @@ static void inline SketchStartLogic(void)
         // so we don't need to inactivate it here...
         //
         // bootKey = 0;			// set the bootKey back to inactive. 
-        StartSketch( initialMCUSR );
+        StartSketch();
     } 
     //
     // On a watchdog reset, if the BOOT_KEY is inactive and there's a sketch, we go
@@ -386,7 +406,7 @@ static void inline SketchStartLogic(void)
     //
     if ( initialMCUSR & _BV(WDRF) )
     {
-        StartSketch( initialMCUSR );
+        StartSketch();
     }
 }
 
@@ -437,9 +457,11 @@ main(void)
     //
     // if progmem == 0xffff, adding one rolls over to 0x0000
     //
-    sketchPresent = (pgm_read_word_near(0) == 0xFFFFu) ? 0x00 : 0xff;
-
-    if (sketchPresent) SketchStartLogic();
+    if  (pgm_read_word_near(0) != 0xFFFFu)
+    {
+        sketchPresent = 0xffu;
+        SketchStartLogic();
+    }
 
     initialMCUSR |= 0x80u;	// flag the fact that the boot loader did not immediately start the sketch.
 
@@ -453,9 +475,9 @@ main(void)
     //
     // We're going to run the bootloader and that requires a bit more hardware initialization
     //
-    SetupNormalHardware();
-
     SetTimeout( TIMEOUT_PERIOD );
+
+    SetupNormalHardware();
     //
     // timeout only decrements when there's a sketch loaded, so this loop
     // runs forever until someone loads page address zero
@@ -482,7 +504,7 @@ main(void)
     /* Disconnect from the host - USB interface will be reset later along with the AVR */
     USB_Detach();
 
-    StartSketch( initialMCUSR );
+    StartSketch();
 }
 
 /** 
@@ -728,7 +750,6 @@ static uint8_t ValidateFlashBlock(uint16_t BlockSize)
     //
     // the operation may not include any bootloader flash space
     //
-    if (avr910Address >= (BOOT_START_ADDR >> 1)) return 0;
     if (    endWordAddr >= (BOOT_START_ADDR >> 1)) return 0;
 
     return 0xff;
@@ -851,7 +872,7 @@ static void ReadWriteMemoryBlock(const uint8_t Command)
     {
         ExecuteSPM( __BOOT_PAGE_WRITE );
         BootRwwEnable();
-        if (blockStartAddress == 0) sketchPresent = 0xff;
+        if (blockStartAddress == 0) sketchPresent = 0xffu;
     }
 
     eeprom_busy_wait(); // shouldn't hurt if we didn't write to eeprom...
@@ -889,7 +910,9 @@ static uint8_t __attribute__((noinline)) CdcReceiveByte(void)
         }
     }
 
+#ifdef LED_DATA_FLASHES
     rxLedFlash = 0xff;  // request a flash
+#endif
 
     /* Fetch the next byte from the OUT endpoint */
     return Endpoint_Read_8();
@@ -905,7 +928,7 @@ static uint8_t __attribute__((noinline)) CdcFlush()
 {
     Endpoint_ClearIN();
 
-    while (!(Endpoint_IsINReady()))
+    while (!Endpoint_IsINReady())
     {
         if (USB_DeviceState == DEVICE_STATE_Unattached)
             return 0xff;
@@ -925,7 +948,9 @@ static void __attribute__((noinline)) CdcSendByte(const uint8_t Data)
         if (CdcFlush()) return;
     }
 
+#ifdef LED_DATA_FLASHES
     txLedFlash = 0xff;  // request a flash
+#endif
 
     /* Write the next byte to the IN endpoint */
     Endpoint_Write_8(Data);
@@ -1099,6 +1124,7 @@ static void ProcessAVR910Command(void)
         CdcSendByte('\r');
     }
 #endif
+#if defined(ENABLE_LOCK_FUSE_READ_SUPPORT)
     else if (Command == AVR109_COMMAND_ReadLockbits)
     {
         CdcSendByte(boot_lock_fuse_bits_get(GET_LOCK_BITS));
@@ -1115,6 +1141,7 @@ static void ProcessAVR910Command(void)
     {
         CdcSendByte(boot_lock_fuse_bits_get(GET_EXTENDED_FUSE_BITS));
     }
+#endif
 #if defined(ENABLE_BLOCK_SUPPORT)
     else if (Command == AVR109_COMMAND_GetBlockWriteSupport)
     {

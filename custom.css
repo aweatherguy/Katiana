@@ -884,7 +884,13 @@ table.doxtable {
 
 table.doxtable td, table.doxtable th {
 	border: 1px solid #2D4068;
-	padding: 8px 16px 8px;
+	padding: 2px 16px 2px;
+}
+
+table.doxtable td.centered, table.doxtable th.centered {
+	border: 1px solid #2D4068;
+	padding: 2px 16px 2px;
+	text-align: center;
 }
 
 table.doxtable th {

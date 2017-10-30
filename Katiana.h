@@ -90,7 +90,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 /* Macros: */
 #define BOOTLOADER_VERSION_MAJOR     0x02
-#define BOOTLOADER_VERSION_MINOR     0x02
+#define BOOTLOADER_VERSION_MINOR     0x03
 #define BOOTLOADER_HWVERSION_MAJOR   0x02
 #define BOOTLOADER_HWVERSION_MINOR   0x01
 
@@ -236,7 +236,7 @@ static void inline SetupNormalHardware(void);
   Some clever person could maybe find a way to prevent that warning from 
   being emitted?
 */
-static void StartSketch(uint8_t) __attribute__((noreturn, noinline));
+static void __attribute__((noreturn naked noinline)) StartSketch( void );
 
 #if defined(ENABLE_SECURITY_CHECKS)
     static uint8_t ValidateFlashBlock(uint16_t);
@@ -255,6 +255,7 @@ static void       CdcSendByte(const uint8_t Response);
 static void ReadWriteMemoryBlock(const uint8_t Command);
 #endif
 
+static void __attribute__((noinline)) SetTimeout(uint8_t);
 static void __attribute__((noinline)) BootRwwEnable(void);
 static void __attribute__((noinline)) ExecuteSPM( uint8_t );
  __attribute__((noinline)) static void IncrementAddress(void);

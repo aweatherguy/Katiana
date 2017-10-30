@@ -37,7 +37,7 @@ MCU          = atmega32u4
 ARCH         = AVR8
 BOARD        = USER
 F_CPU        = 8000000
-F_USB        = 16000000
+F_USB        = 8000000
 #
 # Flash and bootloader section sizes of the target, in KB. 
 # There's no easy way to import these into this makefile based on the MCU macro,

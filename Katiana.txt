@@ -73,7 +73,7 @@ Support for various subsets of AVR910 commands may be configured in the <tt>AppC
 
 The bootloader configures the MCU's USB interface as follows:
 
-<table>
+<div align=center><table>
  <tr>
   <td><b>USB Mode:</b></td>
   <td>Device</td>
@@ -94,9 +94,35 @@ The bootloader configures the MCU's USB interface as follows:
   <td><b>Supported USB Speeds:</b></td>
   <td>Full Speed Mode</td>
  </tr>
-</table>
+</table></div>
 
 <div style="page-break-after: always;"></div>
+
+<br />\section Sec_Sizes Flash Image Size
+
+Even with all options enabled, the bootloader fits easily inside a 4-kB flash sector
+(for the ATmega32U4).
+Here is a typical image size as a function of enabled options this MCU:
+
+<div align=center><table>
+<tr><td><b>Option</b></td><td><b>Image Bytes</b></td></tr>
+<tr><td>None</td>                   <td class="centered">2938</td></tr>
+<tr><td>Block Read/Write</td>       <td class="centered">+398</td></tr>
+<tr><td>Chip Erase</td>             <td class="centered">+30</td></tr>
+<tr><td>Fuse Read</td>              <td class="centered">+82</td></tr>
+<tr><td>Lock Bit Write</td>         <td class="centered">+26</td></tr>
+<tr><td>Flash Byte Read/Write</td>  <td class="centered">+84</td></tr>
+<tr><td>EEPROM Byte Read/Write</td> <td class="centered">+48</td></tr>
+<tr><td>Custom USB S/N &dagger;</td> <td class="centered">+68</td></tr>
+<tr><td>LED Start Flashes</td>      <td class="centered">+54</td></tr>
+<tr><td>LED Data Flashes</td>       <td class="centered">+80</td></tr>
+<tr><td>All</td>                    <td class="centered">3778</td></tr>
+<tr><td>Maximum Limit</td>          <td class="centered">4088</td></tr>
+</table></div>
+
+&dagger; For a 20-character serial number (size depends on length of serial number).
+
+With other MCUs your mileage may vary, especially if the flash size is greater than 64kB.
 
 <br />\section Sec_Running Bootloader Logic
 
@@ -717,6 +743,17 @@ void setup(void)
 Here's a good question: what happens if multiple functions are declared in seciton <tt>.init0</tt>?
 Which one will run first?
 If the function to save <tt>r2</tt> is not first, there could be problems.
+
+\subsection SSec_Flashing LED Flashes
+
+There are three LEDs:
+
+- L may be set to flash a fixed number of times at about 3Hz when the bootloader begins accepting commands.
+- RX flashes while programming data is being received over the CDC interface.
+- TX flashes while programming data is being sent out over CDC.
+
+The RX/TX LEDs do not flash for commands or USB traffic other than programming or verification 
+commands. When they flash, they are always on for 40ms and off for 40ms.
 
 \subsection SSec_API_MemLayout Flash Memory Map
 The boot sector size is determined by the <tt>BOOTSZ</tt> fuse bits.
