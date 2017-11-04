@@ -198,9 +198,6 @@ static uint8_t initialMCUSR ATTR_NO_INIT;
 This is set based on whether the reset vector at location zero is all ones or not.
 if a sketch is loaded, the reset vector will not be all ones.
 */
-// allowing this to be initialized breaks the boot loader...???
-// related to main() being in section init9 ... ???
-//
 static volatile uint8_t sketchPresent;
 
 /**
@@ -366,7 +363,8 @@ static void inline SketchStartLogic(void)
     //
     // if the boot key is active, the don't run the sketch...
     //
-    if (originalBootKey == BOOT_KEY) return;
+    uint8_t booty = originalBootKey - BOOT_KEY;
+    if (! booty) return;
     //
     // here, the boot cause is one of the following: External, WDT, JTAG, USB.
     // special behaviors only occur with external and WDT resets. All others
@@ -475,9 +473,9 @@ main(void)
     //
     // We're going to run the bootloader and that requires a bit more hardware initialization
     //
-    SetTimeout( TIMEOUT_PERIOD );
-
     SetupNormalHardware();
+
+    SetTimeout( TIMEOUT_PERIOD );
     //
     // timeout only decrements when there's a sketch loaded, so this loop
     // runs forever until someone loads page address zero
@@ -515,12 +513,20 @@ More setup will be required of the bootloader needs to be run
 static void SetupMinimalHardware(void)
 {
     MCUSR = 0;
-
-    wdt_disable(); // we don't use the watchdog timer for anything here.
+    //
+    // wdt_disable() has too much "stuff" for our needs --
+    // it disables interrupts and saves/restores SREG...
+    // so we do it the direct way here, saving six bytes
+    //
+    WDTCSR = _BV(WDE) | _BV(WDCE);
+    WDTCSR = 0x00;
     //
     // Setup the proper MCU clock rate (defined in Katiana.h)
+    // ditto about the AVR macro...we do it the direct way here, saving eight bytes
+    //clock_prescale_set( SYSTEM_CLOCK_PRESCALE );
     //
-    clock_prescale_set( SYSTEM_CLOCK_PRESCALE );
+    CLKPR = _BV(CLKPCE);
+    CLKPR = SYSTEM_CLOCK_PRESCALE;
 }
 
 /**
@@ -786,30 +792,43 @@ on the AVR109 protocol command issued.
 */
 static void ReadWriteMemoryBlock(const uint8_t Command)
 {
-    uint8_t  word[2];
+    uint16_t word;
+    uint16_t blockSize;
+    char MemoryType;
+    uint8_t isFlash;
+    uint8_t isEeprom;
+    //
+    // Getting two bytes from the CDC serial port into a 16-bit integer
+    // is more efficient (4 bytes less code) if we do it in assembly.
+    // Be careful to build the 16-bit value in a lower register 
+    // so the 2nd call to CdcReceiveByte doesn't over-write the MSB.
+    //
+    __asm__ __volatile__ (
+        "rcall CdcReceiveByte\n\t"
+        "mov %B0, r24\n\t"
+        "rcall CdcReceiveByte\n\t"
+        "mov %A0, r24\n"
+        : "=l" (blockSize)
+        : 
+        : "r24","r25"
+    );
 
-    uint16_t BlockSize  = (CdcReceiveByte() << 8);
-    BlockSize |=  CdcReceiveByte();
+    MemoryType =  CdcReceiveByte();
+    isFlash  = MemoryType == MEMORY_TYPE_FLASH;
+    isEeprom = MemoryType == MEMORY_TYPE_EEPROM;
 
-    char MemoryType =  CdcReceiveByte();
-
-    uint8_t isFlash = MemoryType ==  MEMORY_TYPE_FLASH;
-
-    if ( (! isFlash) && (MemoryType != MEMORY_TYPE_EEPROM))
+    if ( (! isFlash) && (! isEeprom) )
     {
         /* Send error byte back to the host */
         CdcSendByte('?');
         return;
     }
 
-    uint8_t valid = isFlash ? ValidateFlashBlock(BlockSize) : ValidateEepromBlock(BlockSize);
-
+    uint8_t valid = isFlash ? ValidateFlashBlock(blockSize) : ValidateEepromBlock(blockSize);
     uint16_t blockStartAddress = flashByteAddress;
-
     uint8_t isWrite = Command == AVR109_COMMAND_BlockWrite;
-    
-    uint8_t writingFlash = valid & isWrite & isFlash;
 
+    uint8_t writingFlash = valid & isWrite & isFlash;
     if (writingFlash)
     {
         __asm__ __volatile__ (		    \
@@ -820,14 +839,30 @@ static void ReadWriteMemoryBlock(const uint8_t Command)
         ExecuteSPM( __BOOT_PAGE_ERASE );
     }
 
-    while (BlockSize--)
+    while (blockSize--)
     {
         if (isWrite)
         {
             if (isFlash)
             {
-                word[0] = CdcReceiveByte();
-                word[1] = CdcReceiveByte();
+                //
+                // Getting two bytes from the CDC serial port into a 16-bit integer 
+                // is more efficient if we do it in assembly. 
+                // The entire change in this case saves a total of 26 bytes compared to previous
+                // method involving a 2-byte array to hold the prog memory word data.
+                // Be careful to build the 16-bit value in a lower register 
+                // so the 2nd call to CdcReceiveByte doesn't over-write the MSB.
+                //
+                __asm__ __volatile__ (
+                    "rcall CdcReceiveByte\n\t"
+                    "mov %A0, r24\n\t"
+                    "rcall CdcReceiveByte\n\t"
+                    "mov %B0, r24\n"
+                    : "=l" (word)
+                    : 
+                    : "r24","r25"
+                );
+
                 if (valid)
                 {
                     // 
@@ -835,11 +870,11 @@ static void ReadWriteMemoryBlock(const uint8_t Command)
                     // need to clear that state from the page erase operation.
                     //
                     cli();
-                    boot_page_fill(flashByteAddress, *(uint16_t*)word);
+                    boot_page_fill(flashByteAddress, word); //*(uint16_t*)word);
                     sei();
                 }
 
-                BlockSize--;
+                blockSize--;
             }
             else
             {
@@ -855,10 +890,12 @@ static void ReadWriteMemoryBlock(const uint8_t Command)
         {
             if (isFlash)
             {
-                uint16_t w = valid ? pgm_read_word( flashByteAddress ) : 0xffffu;
+                uint16_t w;
+                w = 0xffffu;
+                if (valid) w = pgm_read_word( flashByteAddress );
                 CdcSendByte(w & 0xffu);
                 CdcSendByte(w >> 8);
-                BlockSize--;
+                blockSize--;
             }
             else
             {
