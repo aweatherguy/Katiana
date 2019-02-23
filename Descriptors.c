@@ -147,7 +147,7 @@ const USB_Descriptor_Configuration_t ConfigurationDescriptor =
 
 	.CDC_Functional_Header =
 		{
-			.Header                 = {.Size = sizeof(USB_CDC_Descriptor_FunctionalHeader_t), .Type = DTYPE_CSInterface},
+			.Header                 = {.Size = sizeof(USB_CDC_Descriptor_FunctionalHeader_t), .Type = CDC_DTYPE_CSInterface},
 			.Subtype                = 0x00,
 
 			.CDCSpecification       = VERSION_BCD(1,1,0),
@@ -155,7 +155,7 @@ const USB_Descriptor_Configuration_t ConfigurationDescriptor =
 
 	.CDC_Functional_ACM =
 		{
-			.Header                 = {.Size = sizeof(USB_CDC_Descriptor_FunctionalACM_t), .Type = DTYPE_CSInterface},
+			.Header                 = {.Size = sizeof(USB_CDC_Descriptor_FunctionalACM_t), .Type = CDC_DTYPE_CSInterface},
 			.Subtype                = 0x02,
 
 			.Capabilities           = 0x02,
@@ -163,7 +163,7 @@ const USB_Descriptor_Configuration_t ConfigurationDescriptor =
 
 	.CDC_Functional_Union =
 		{
-			.Header                 = {.Size = sizeof(USB_CDC_Descriptor_FunctionalUnion_t), .Type = DTYPE_CSInterface},
+			.Header                 = {.Size = sizeof(USB_CDC_Descriptor_FunctionalUnion_t), .Type = CDC_DTYPE_CSInterface},
 			.Subtype                = 0x06,
 
 			.MasterInterfaceNumber  = INTERFACE_ID_CDC_CCI,
@@ -261,7 +261,7 @@ Not sure if we need to include a terminating null 16-bits but we do anyway just 
 
 Let the init code zero this array so we can tell from the length field if it's already been setup.
 */
-static uint8_t SramSerialString[ sizeof( USB_StdDescriptor_Header_t ) + (strlen(USB_HDWR_SERIAL) << 1) + 2 ];
+static uint8_t SramSerialString[ sizeof( USB_StdDescriptor_Header_t ) + (__builtin_constant_p(strlen(USB_HDWR_SERIAL)) << 1) + 2 ];
 
 #endif
 

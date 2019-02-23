@@ -108,13 +108,13 @@ with doxygen.
 /** 
 Pre-assigned AVR910 MCU signatures are defined in Descriptors.h 
 */
-static uint8_t avrSignature[3] PROGMEM = { AVR_SIGNATURE_3, AVR_SIGNATURE_2, AVR_SIGNATURE_1 };
+static const uint8_t avrSignature[3] PROGMEM = { AVR_SIGNATURE_3, AVR_SIGNATURE_2, AVR_SIGNATURE_1 };
 
 /** 
 String used to identify this bootloader to the AVR910 programmer.
 \see Defined in Katiana.h
 */
-static uint8_t softwareIdentifier[7] PROGMEM = SOFTWARE_IDENTIFIER;
+static const uint8_t softwareIdentifier[7] PROGMEM = SOFTWARE_IDENTIFIER;
 
 /** 
 Contains the current baud rate and other settings of the first virtual serial port. 
