@@ -261,7 +261,7 @@ Not sure if we need to include a terminating null 16-bits but we do anyway just 
 
 Let the init code zero this array so we can tell from the length field if it's already been setup.
 */
-static uint8_t SramSerialString[ sizeof( USB_StdDescriptor_Header_t ) + (strlen(USB_HDWR_SERIAL) << 1) + 2 ];
+static uint8_t SramSerialString[ sizeof( USB_StdDescriptor_Header_t ) + (__builtin_constant_p(strlen(USB_HDWR_SERIAL)) << 1) + 2 ];
 
 #endif
 
